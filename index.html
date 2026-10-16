@@ -9,6 +9,7 @@
   --blaze:#ff7a1a;            /* hunter orange: accent */
   --rain:#4fa8ff;
   --front:#7cc4ff; --front-hi:#a9d8ff; --front-bg:#13212e; --front-line:#27435c;
+  --rain-2:#2f78c4; --rain-3:#1f4f86;
   --sun:#ffc93c; --moon:#d9dccf; --cloud:#c8cec4; --cloud-dk:#8b948a; --storm:#5f6876;
   --calm:#6fcf8a; --breezy:#f2c14e; --windy:#ff5c4d;
   --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
@@ -51,16 +52,37 @@ button:focus-visible,.card:focus-visible{outline:2px solid var(--blaze);outline-
 .card .temp sup{font-size:26px;color:var(--muted);vertical-align:top;position:relative;top:8px}
 .card .feels{color:var(--muted);font-size:13px}
 .card .dial{grid-row:2/4;grid-column:2;align-self:center}
-.stats{grid-column:1/-1;display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:8px;margin-top:6px;border-top:1px solid var(--line);padding-top:10px}
+.stats{grid-column:1/-1;display:grid;grid-template-columns:1.3fr 1fr auto;align-items:end;gap:8px;margin-top:6px;border-top:1px solid var(--line);padding-top:10px}
 .stat .k{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint)}
 .stat .v{font-family:var(--display);font-weight:700;font-size:22px;font-variant-numeric:tabular-nums;line-height:1.1}
 .stat .v small{font-size:14px;color:var(--muted);font-weight:600}
 
 .hint{color:var(--faint);font-size:13px;text-align:center}
+.wxstrip{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+.wxp{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.wxk{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.wxnone{color:var(--faint);font-size:13px}
+.wxp .big{font-family:var(--display);font-weight:800;font-size:34px;line-height:1;font-variant-numeric:tabular-nums}
+.wxp .big small{font-size:14px;color:var(--muted);font-weight:600}
+.rainrow{display:flex;gap:14px;align-items:center}
+.gauge{width:92px;height:auto;flex:none}
+.rainnums{display:flex;flex-direction:column;gap:5px;min-width:0;flex:1}
+.rl{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.rl i{width:10px;height:10px;border-radius:2px;flex:none}
+.rl b{margin-left:auto;font-family:var(--display);font-size:17px;color:var(--fg);font-variant-numeric:tabular-nums}
+.wxsrc{font-size:11px;color:var(--faint)}.wxsrc.ok{color:var(--calm)}
+.presrow{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.ptrend{font-weight:700;font-size:13px;padding:3px 9px;border-radius:999px;border:1px solid var(--line);color:var(--fg)}
+.ptrend.fall2{color:var(--windy);border-color:var(--windy)}.ptrend.fall{color:var(--breezy);border-color:var(--breezy)}
+.ptrend.rise,.ptrend.rise2{color:var(--front);border-color:var(--front-line)}
+.pd3{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.pchart{width:100%;max-width:460px;height:auto;display:block}
+.pmsg{font-size:14px;color:var(--fg)}
 .chilo{display:flex;gap:12px;margin-top:4px;font-family:var(--display);font-weight:700;font-size:20px;font-variant-numeric:tabular-nums}
 .chilo i{font-style:normal;font-family:var(--body);font-size:11px;font-weight:600;color:var(--muted);margin-right:3px;letter-spacing:.06em}
 .chilo .lo{color:var(--muted)}
-.fchip{grid-column:1/-1;display:flex;align-items:center;gap:8px;color:var(--front);background:var(--front-bg);border:1px solid var(--front-line);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:600}
+.fchip{display:inline-flex;align-items:center;gap:6px;color:var(--front);background:var(--front-bg);border:1px solid var(--front-line);border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700;white-space:nowrap}
+.fcell{justify-self:end}
 .fchip.strong,.fbanner.strong .fhead{color:var(--front-hi)}
 .fbanner{background:var(--front-bg);border:1px solid var(--front-line);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
 .fhead{display:flex;align-items:center;gap:10px;color:var(--front);flex-wrap:wrap}
@@ -204,6 +226,7 @@ footer{color:var(--faint);font-size:12px;display:flex;justify-content:space-betw
   .now .stats{text-align:left}
   .windtext{align-items:center}
   .lightstrip{grid-template-columns:1fr;gap:12px}
+  .wxstrip{grid-template-columns:1fr}
   .lseg,.lseg:first-child{padding-inline:4px}
   .lseg+.lseg{border-left:0;border-top:1px solid var(--line);padding-top:12px}
   .hilo{justify-content:center}
@@ -280,6 +303,23 @@ function metarWind(raw){
   if(spd===0) dir=null;
   return {spd,dir,gust,vrb:m[1]==="VRB",range};
 }
+const HPA_IN=33.8639;
+function metarAlt(raw){ if(!raw) return null; const m=raw.split(" RMK")[0].match(/\sA(\d{4})\b/); return m?+m[1]/100:null; }
+/* 72-hour history: one routine report per hour (minute ≥45), rain from the METAR "Pxxxx" group */
+const histUrl=id=>`https://api.weather.gov/stations/${id}/observations?start=${new Date(Date.now()-73*36e5).toISOString().slice(0,19)}Z&limit=400`;
+function procHist(j){
+  const ps=(j.features||[]).map(f=>f.properties).filter(p=>p&&p.timestamp).sort((a,b)=>a.timestamp<b.timestamp?-1:1);
+  const raw=p=>p.rawMessage||"";
+  const gauge=ps.some(p=>/\bAO2\b/.test(raw(p))&&!/\bPNO\b/.test(raw(p))) || ps.some(p=>/\sP\d{4}\b/.test(raw(p).split(" RMK")[1]||""));
+  const byHour={};
+  for(const p of ps){ if(+p.timestamp.slice(14,16)>=45) byHour[p.timestamp.slice(0,13)]=p; }
+  const rows=Object.values(byHour).map(p=>{
+    const rmk=raw(p).split(" RMK")[1]||"", m=rmk.match(/\sP(\d{4})\b/);
+    const pin=m?+m[1]/100:(q(p.precipitationLastHour,"in")??0);
+    return {t:+new Date(p.timestamp), p:pin, a:metarAlt(raw(p)) ?? (p.seaLevelPressure&&p.seaLevelPressure.value!=null?p.seaLevelPressure.value/3386.39:null)};
+  });
+  return {gauge,rows};
+}
 function parseObs(j){
   const p=j&&(j.properties||j); if(!p||!p.timestamp) return null;
   const temp=q(p.temperature,"F"); if(temp==null) return null;
@@ -291,7 +331,8 @@ function parseObs(j){
     spd:   mw?mw.spd:apiSpd,                                   // null = not reported (NOT calm)
     dir:   mw?mw.dir:q(p.windDirection),
     gust:  mw?mw.gust:q(p.windGust,"mph"),
-    vrbMetar: mw?mw.vrb:false};
+    vrbMetar: mw?mw.vrb:false,
+    alt: metarAlt(p.rawMessage) ?? (p.seaLevelPressure&&p.seaLevelPressure.value!=null?p.seaLevelPressure.value/3386.39:null)};
 }
 function skyFromText(t){
   t=(t||"").toLowerCase(); if(!t) return null;
@@ -356,10 +397,10 @@ function apiUrl(){
     latitude:LOCATIONS.map(l=>l.lat).join(","),
     longitude:LOCATIONS.map(l=>l.lon).join(","),
     current:"temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,is_day",
-    hourly:"temperature_2m,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,is_day,pressure_msl",
+    hourly:"temperature_2m,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,is_day,pressure_msl,precipitation",
     daily:"weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,sunrise,sunset",
     temperature_unit:"fahrenheit",wind_speed_unit:"mph",precipitation_unit:"inch",
-    timezone:TZ,forecast_days:"10",past_days:"1",
+    timezone:TZ,forecast_days:"10",past_days:"3",
   });
   return `${API}?${p}`;
 }
@@ -392,7 +433,8 @@ function fromApi(loc,r,obs){
   const asOfDate=new Date(cu.time.slice(0,10)+"T12:00:00");
   return {...loc,
     ...currentFrom(loc,cu,obs,asOfDate),
-    hourly,daily,prevDay,hourAll};
+    hourly,daily,prevDay,hourAll,
+    _h:{i0,pres:h.pressure_msl||[],precip:h.precipitation||[]}};
 }
 function currentFrom(loc,cu,obs,asOfDate){
   const day=asOfDate.toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"});
@@ -457,6 +499,11 @@ function mock(loc,i){
   const prevDay={hi:b.t+6,lo:b.t-12,dir:b.dir,spd:b.spd,pres:1011,pp:0,label:"Yesterday"};
   return {prevDay,hourAll:[],asOf:"Sample data · not live",current:{src:"sample",sky:c.sky,temp:c.temp,feels:c.temp+(b.h>70?4:-1),hum:b.h,precip:b.pp>20?0.02:0,dir:c.dir,spd:c.spd,gust:c.gust},hourly,daily};
 }
+function sampleRain(i){return {src:"sample",b24:[0.12,0,0][i],b48:[0.58,0.21,0][i],b72:[0.3,0.05,0.02][i]};}
+function samplePres(i){const now=Date.now(),H=36e5,base=[29.98,30.02,30.06][i],past=[],fc=[];
+  for(let k=-24;k<=0;k++) past.push({t:now+k*H,v:base-0.05*Math.sin((k+24)/24*Math.PI)+k*0.002});
+  for(let k=0;k<=24;k++) fc.push({t:now+k*H,v:past[24].v+(k>8?0.004*(k-8):-.002*k)});
+  return {src:"sample",cur:past[24].v,past,fc,d3:past[24].v-past[21].v};}
 const SAMPLE = () => LOCATIONS.map((l,i)=>({...l,...mock(l,i)}));
 let DATA = null;
 
@@ -637,7 +684,8 @@ function frontWhen(f){
 }
 function frontChip(l){
   const f=(l.fronts||[])[0]; if(!f) return "";
-  return `<div class="fchip${f.strong?" strong":""}">${frontIcon(14)}<span>${f.strong?"Strong cold front":"Cold front"} · ${frontWhen(f)}</span></div>`;
+  const w=frontWhen(f).replace("~","");
+  return `<span class="fchip${f.strong?" strong":""}" title="${f.strong?"Strong cold front":"Cold front"} ${frontWhen(f)}">${frontIcon(13)}<span>${w.charAt(0).toUpperCase()+w.slice(1)}</span></span>`;
 }
 const frontIcon=s=>`<svg width="${s}" height="${s}" viewBox="0 0 16 16" aria-hidden="true"><path d="M1 12 L15 12" stroke="currentColor" stroke-width="2"/><path d="M3 12 L5.5 7 L8 12Z M9 12 L11.5 7 L14 12Z" fill="currentColor"/></svg>`;
 function frontBanner(l){
@@ -653,8 +701,115 @@ function frontBanner(l){
   return `<div class="fbanner${f.strong?" strong":""}">
     <div class="fhead">${frontIcon(18)}<b>${f.strong?"Strong cold front":"Cold front"}</b><span>${frontWhen(f)}</span></div>
     <div class="ffacts">${facts.map(x=>`<span>${x}</span>`).join("")}</div>
-    ${f.after.length?`<div class="fafter">Deer movement usually picks up behind a front. Best sits: <b>${f.after.join(" &amp; ")}</b></div>`:""}
+    ${f.after.length?`<div class="fafter">Best sits: <b>${f.after.join(" &amp; ")}</b></div>`:""}
     ${more}
+  </div>`;
+}
+/* ---------- rain gauge (24 / 48 / 72 h) ---------- */
+function buildRain(l,hist){
+  const now=Date.now(), H=36e5;
+  if(hist&&hist.gauge&&hist.rows.length>=24){
+    const sum=(a,b)=>hist.rows.filter(r=>r.t>now-b*H&&r.t<=now-a*H).reduce((x,r)=>x+r.p,0);
+    return {src:"sensor",b24:sum(0,24),b48:sum(24,48),b72:sum(48,72)};
+  }
+  const h=l._h; if(!h||!h.precip.length) return null;
+  const sumM=(a,b)=>{let t=0;for(let k=h.i0-b;k<h.i0-a;k++) if(k>=0&&h.precip[k]!=null) t+=h.precip[k];return t};
+  return {src:"model",noGauge:!!(hist&&!hist.gauge),b24:sumM(0,24),b48:sumM(24,48),b72:sumM(48,72)};
+}
+/* ---------- pressure: sensor history + bias-corrected model forecast (inHg) ---------- */
+function buildPres(l,obs,hist){
+  const h=l._h, H=36e5, now=Date.now(), hourStart=Math.floor(now/H)*H;
+  const model=k=>h&&h.pres[k]!=null?h.pres[k]/HPA_IN:null;
+  const mNow=h?model(h.i0):null;
+  let past=[], src="model", cur=null;
+  const rows=hist&&hist.rows?hist.rows.filter(r=>r.a!=null&&r.t>now-25*H):[];
+  if(rows.length>=6){ past=rows.map(r=>({t:r.t,v:r.a})); src="sensor"; }
+  else if(h){ for(let k=h.i0-24;k<=h.i0;k++){const v=model(k); if(v!=null) past.push({t:hourStart+(k-h.i0)*H,v});} }
+  cur=(obs&&obs.alt!=null)?obs.alt:(past.length?past[past.length-1].v:mNow);
+  if(cur==null) return null;
+  if(obs&&obs.alt!=null&&src==="sensor") past.push({t:+new Date(obs.time),v:obs.alt});
+  const bias=(mNow!=null)?cur-mNow:0, fc=[];
+  if(h) for(let k=h.i0;k<=h.i0+24;k++){const v=model(k); if(v!=null) fc.push({t:hourStart+(k-h.i0)*H,v:v+bias});}
+  // 3-hour change
+  const tgt=now-3*H; let ref=null,best=Infinity;
+  for(const r of past){const d=Math.abs(r.t-tgt); if(d<best&&d<75*6e4){best=d;ref=r.v}}
+  const d3=ref==null?null:cur-ref;
+  return {cur,src,past,fc,d3};
+}
+function presTrend(d3){
+  if(d3==null) return {k:"steady",t:"Trend unknown",m:"Not enough recent readings to judge the trend."};
+  if(d3<=-0.06) return {k:"fall2",t:"Falling fast",m:"Falling fast: storms or a front likely within 12–24 hrs."};
+  if(d3<=-0.02) return {k:"fall",t:"Falling",m:"Falling: clouds and weather moving in."};
+  if(d3>=0.06)  return {k:"rise2",t:"Rising fast",m:"Rising fast: post-front clearing, cooler and breezy."};
+  if(d3>=0.02)  return {k:"rise",t:"Rising",m:"Rising: clearing and drying out."};
+  return {k:"steady",t:"Steady",m:"Steady: settled weather, little change expected."};
+}
+function rainPanel(l){
+  const r=l.rain;
+  if(!r) return `<div class="wxp"><div class="wxk">Rainfall · last 72 hrs</div><div class="wxnone">Rain history unavailable.</div></div>`;
+  const tot=r.b24+r.b48+r.b72, cap=tot<=1?1:tot<=2?2:tot<=4?4:Math.ceil(tot);
+  const W=64,Hh=150,x0=14,x1=50,yTop=10,yBot=140, sc=(yBot-yTop)/cap;
+  const layers=[[r.b72,"var(--rain-3)"],[r.b48,"var(--rain-2)"],[r.b24,"var(--rain)"]];
+  let y=yBot, fills="";
+  for(const [v,col] of layers){ if(v<=0) continue; const hgt=Math.max(1.5,v*sc); fills+=`<rect x="${x0+2}" y="${(y-hgt).toFixed(1)}" width="${x1-x0-4}" height="${hgt.toFixed(1)}" fill="${col}"/>`; y-=hgt; }
+  let ticks="";
+  const step=cap<=1?0.25:cap<=2?0.5:1;
+  for(let v=step;v<=cap+1e-9;v+=step){const ty=yBot-v*sc; ticks+=`<line x1="${x1-10}" y1="${ty}" x2="${x1}" y2="${ty}" stroke="var(--muted)" stroke-width="1"/><text x="${x1+4}" y="${ty+3.5}" fill="var(--faint)" font-size="9" font-family="Barlow,sans-serif">${+v.toFixed(2)}"</text>`;
+    const half=v-step/2; if(half>0){const hy=yBot-half*sc; ticks+=`<line x1="${x1-5}" y1="${hy}" x2="${x1}" y2="${hy}" stroke="var(--faint)" stroke-width="1"/>`;}}
+  const svg=`<svg class="gauge" viewBox="0 0 ${W+16} ${Hh}" role="img" aria-label="Rain gauge: ${tot.toFixed(2)} inches in 72 hours">
+    <path d="M${x0-4} ${yTop-4} H${x0}" stroke="var(--muted)" stroke-width="1.5"/>
+    <rect x="${x0}" y="${yTop}" width="${x1-x0}" height="${yBot-yTop}" rx="3" fill="var(--bg)"/>
+    ${fills}${ticks}
+    <rect x="${x0}" y="${yTop}" width="${x1-x0}" height="${yBot-yTop}" rx="3" fill="none" stroke="var(--muted)" stroke-width="1.5"/>
+    <rect x="${x0-6}" y="${yBot}" width="${x1-x0+12}" height="5" rx="2" fill="var(--muted)"/></svg>`;
+  const f=v=>v.toFixed(2)+'"';
+  const srcTxt=r.src==="sensor"?`Measured · ${l.station} gauge`:r.src==="sample"?"Sample data":r.noGauge?`Estimate · ${l.station} has no rain gauge`:"Estimate · sensor history unavailable";
+  return `<div class="wxp">
+    <div class="wxk">Rainfall · last 72 hrs</div>
+    <div class="rainrow">${svg}
+      <div class="rainnums">
+        <div class="big">${f(tot)}<small> total</small></div>
+        <div class="rl"><i style="background:var(--rain)"></i>Last 24 hrs<b>${f(r.b24)}</b></div>
+        <div class="rl"><i style="background:var(--rain-2)"></i>24–48 hrs ago<b>${f(r.b48)}</b></div>
+        <div class="rl"><i style="background:var(--rain-3)"></i>48–72 hrs ago<b>${f(r.b72)}</b></div>
+        <div class="wxsrc ${r.src==="sensor"?"ok":""}">${srcTxt}</div>
+      </div>
+    </div>
+  </div>`;
+}
+function presPanel(l){
+  const P=l.pres;
+  if(!P) return `<div class="wxp"><div class="wxk">Barometric pressure</div><div class="wxnone">Pressure unavailable.</div></div>`;
+  const tr=presTrend(P.d3), all=[...P.past,...P.fc].filter(x=>x.v!=null);
+  const now=Date.now(), t0=now-24*36e5, t1=now+24*36e5;
+  let lo=Math.min(...all.map(x=>x.v)), hi=Math.max(...all.map(x=>x.v));
+  const mid=(lo+hi)/2, span=Math.max(0.15,hi-lo+0.04); lo=mid-span/2; hi=mid+span/2;
+  const W=320,Hh=110,L=4,Rr=44,T=8,B=22;
+  const X=t=>L+(Math.min(t1,Math.max(t0,t))-t0)/(t1-t0)*(W-L-Rr), Y=v=>T+(hi-v)/(hi-lo)*(Hh-T-B);
+  const path=a=>a.filter(x=>x.t>=t0-36e5&&x.t<=t1+36e5).map((x,i)=>`${i?"L":"M"}${X(x.t).toFixed(1)} ${Y(x.v).toFixed(1)}`).join("");
+  const pastD=path(P.past), fcD=path(P.fc);
+  const area=pastD?`${pastD}L${X(P.past[P.past.length-1].t).toFixed(1)} ${Hh-B}L${X(P.past[0].t).toFixed(1)} ${Hh-B}Z`:"";
+  const grid=[hi-(hi-lo)*0.15,mid,lo+(hi-lo)*0.15].map(v=>`<line x1="${L}" x2="${W-Rr}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="var(--line)" stroke-width="1"/><text x="${W-Rr+6}" y="${(Y(v)+3.5).toFixed(1)}" fill="var(--faint)" font-size="10" font-family="Barlow,sans-serif">${v.toFixed(2)}</text>`).join("");
+  const xn=X(now), yn=Y(P.cur);
+  const svg=`<svg class="pchart" viewBox="0 0 ${W} ${Hh}" role="img" aria-label="Pressure ${P.cur.toFixed(2)} inches, ${tr.t}">
+    ${grid}
+    ${area?`<path d="${area}" fill="var(--front)" fill-opacity=".08"/>`:""}
+    ${pastD?`<path d="${pastD}" fill="none" stroke="var(--front)" stroke-width="2"/>`:""}
+    ${fcD?`<path d="${fcD}" fill="none" stroke="var(--front)" stroke-width="2" stroke-dasharray="4 4" opacity=".75"/>`:""}
+    <line x1="${xn}" x2="${xn}" y1="${T}" y2="${Hh-B}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="2 3"/>
+    <circle cx="${xn}" cy="${yn}" r="4.5" fill="var(--front)" stroke="var(--surface)" stroke-width="2"/>
+    <text x="${L}" y="${Hh-6}" fill="var(--faint)" font-size="10" font-family="Barlow,sans-serif">−24h</text>
+    <text x="${xn}" y="${Hh-6}" text-anchor="middle" fill="var(--muted)" font-size="10" font-family="Barlow,sans-serif">Now</text>
+    <text x="${W-Rr}" y="${Hh-6}" text-anchor="end" fill="var(--faint)" font-size="10" font-family="Barlow,sans-serif">+24h</text></svg>`;
+  const d3=P.d3==null?"":`${P.d3>=0?"+":"−"}${Math.abs(P.d3).toFixed(2)} in 3 hrs`;
+  const arrow={fall2:"↓↓",fall:"↓",steady:"→",rise:"↑",rise2:"↑↑"}[tr.k];
+  return `<div class="wxp">
+    <div class="wxk">Barometric pressure</div>
+    <div class="presrow"><div class="big">${P.cur.toFixed(2)}<small> inHg</small></div>
+      <span class="ptrend ${tr.k}">${arrow} ${tr.t}</span><span class="pd3">${d3}</span></div>
+    ${svg}
+    <div class="pmsg">${tr.m}</div>
+    <div class="wxsrc ${P.src==="sensor"?"ok":""}">${P.src==="sensor"?`Past 24h measured at ${l.station} · dashed line is forecast`:P.src==="sample"?"Sample data":"Model values · dashed line is forecast"}</div>
   </div>`;
 }
 function srcChip(l){
@@ -673,10 +828,9 @@ function renderCards(){
       <div></div>
       <div class="stats">
         <div class="stat"><div class="k">Wind</div><div class="v" style="color:${windColor(c.spd)}">${c.dir==null?"Calm":c.dirVar?`VRB ${c.spd}`:`${card8(c.dir)} ${c.spd}`}${c.windModel?"<small>*</small>":""} ${c.gust!=null?`<small>G ${c.gust}</small>`:""}</div></div>
-        <div class="stat"><div class="k">Rain last hr</div><div class="v" style="color:${c.precip?"var(--rain)":"var(--fg)"}">${precipTxt(c.precip)}<small>in</small></div></div>
         <div class="stat"><div class="k">Humidity</div><div class="v">${pct(c.hum)}<small>%</small></div></div>
+        <div class="stat fcell">${frontChip(l)}</div>
       </div>
-      ${frontChip(l)}
     </button>`}).join("");
 }
 
@@ -764,6 +918,7 @@ function renderDetail(dirn){
       </div>
       ${(()=>{const ls=lightStatus(l);return ls?`<div class="lseg cd" id="lightcd"><span class="k">${ls.k}</span><b>${ls.v}</b></div>`:""})()}
     </div>
+    <div class="wxstrip">${rainPanel(l)}${presPanel(l)}</div>
     ${frontBanner(l)}
     ${radarSection(l)}
     <div class="fc-head">
@@ -819,7 +974,7 @@ document.querySelector("h1").addEventListener("click",showOverview);
 document.querySelector("h1").style.cursor="pointer";
 /* ---------- loading, caching, refresh ---------- */
 const $status=document.getElementById("status"), $upd=document.getElementById("updated"), $btn=document.getElementById("refresh");
-const CACHE_KEY="bw-cache-v6";
+const CACHE_KEY="bw-cache-v7";
 let lastFetch=0, live=false, timer=null;
 
 function render(){ if(!DATA)return; if($dt.hidden) renderCards(); else { renderCards(); const y=window.scrollY; renderDetail(); $dt.className="detail"; window.scrollTo(0,y); } }
@@ -838,10 +993,19 @@ function setStatus(){
   $status.textContent=stale?"Stale":"Live";
   $upd.textContent=`Updated ${new Date(lastFetch).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})} · ${mins<1?"just now":mins+" min ago"}`;
 }
-function apply(json,obs,ts){
+function apply(json,obs,ts,hist){
   const arr=Array.isArray(json)?json:[json];
-  DATA=LOCATIONS.map((l,i)=>fromApi(l,arr[i],obs&&obs[i])); DATA.forEach(l=>l.fronts=detectFronts(l));
+  DATA=LOCATIONS.map((l,i)=>fromApi(l,arr[i],obs&&obs[i]));
+  DATA.forEach((l,i)=>{ l.fronts=detectFronts(l); const hs=hist&&hist[i]; l.rain=buildRain(l,hs); l.pres=buildPres(l,obs&&obs[i],hs); });
   lastFetch=ts; live=true; render(); setStatus();
+}
+const HIST={};
+async function getHist(id){
+  const c=HIST[id]; if(c&&Date.now()-c.ts<60*6e4) return c.data;
+  try{
+    const r=await fetch(histUrl(id),{cache:"no-store"}); if(!r.ok) throw new Error("HTTP "+r.status);
+    const data=procHist(await r.json()); HIST[id]={ts:Date.now(),data}; return data;
+  }catch(e){ console.warn(`History ${id} unavailable:`,e); return c?c.data:null; }
 }
 async function getObs(id){
   try{
@@ -870,17 +1034,18 @@ async function load(manual=false){
   $btn.disabled=true; $btn.textContent="Refreshing…";
   try{
     const obsP=Promise.all(LOCATIONS.map(l=>getObs(l.station)));
+    const histP=Promise.all(LOCATIONS.map(l=>getHist(l.station)));
     const res=await fetch(apiUrl(),{cache:"no-store"});
     if(!res.ok) throw new Error("HTTP "+res.status);
     const json=await res.json();
     if(json.error) throw new Error(json.reason||"API error");
-    const obs=await obsP;
+    const obs=await obsP, hist=await histP;
     const ts=Date.now();
-    apply(json,obs,ts);
-    try{localStorage.setItem(CACHE_KEY,JSON.stringify({ts,json,obs}))}catch(_){}
+    apply(json,obs,ts,hist);
+    try{localStorage.setItem(CACHE_KEY,JSON.stringify({ts,json,obs,hist}))}catch(_){}
   }catch(err){
     console.warn("Live weather fetch failed:",err);
-    if(!DATA){ DATA=SAMPLE(); DATA.forEach(l=>l.fronts=detectFronts(l)); live=false; render(); }
+    if(!DATA){ DATA=SAMPLE(); DATA.forEach((l,i)=>{ l.fronts=detectFronts(l); l.rain=sampleRain(i); l.pres=samplePres(i); }); live=false; render(); }
     setStatus();
     $upd.textContent= live ? `Couldn't refresh (${err.message}). Showing last update.` : "Live data unavailable here. Showing sample data.";
   }finally{
@@ -899,7 +1064,7 @@ setInterval(setStatus,6e4);
 /* boot: show cached data instantly, then fetch fresh */
 try{
   const c=JSON.parse(localStorage.getItem(CACHE_KEY)||"null");
-  if(c && Date.now()-c.ts<6*36e5) apply(c.json,c.obs,c.ts);
+  if(c && Date.now()-c.ts<6*36e5){ apply(c.json,c.obs,c.ts,c.hist); (c.hist||[]).forEach((h,i)=>{ if(h) HIST[LOCATIONS[i].station]={ts:c.ts,data:h}; }); }
 }catch(_){}
 if(location.hash && LOCATIONS.some(l=>"#"+l.id===location.hash)) selected=location.hash.slice(1);
 if(!DATA){ $status.textContent="Loading…"; }
