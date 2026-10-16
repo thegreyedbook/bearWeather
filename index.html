@@ -8,6 +8,7 @@
   --fg:#eef0ea; --muted:#9aa396; --faint:#6b7468;
   --blaze:#ff7a1a;            /* hunter orange: accent */
   --rain:#4fa8ff;
+  --front:#7cc4ff; --front-hi:#a9d8ff; --front-bg:#13212e; --front-line:#27435c;
   --sun:#ffc93c; --moon:#d9dccf; --cloud:#c8cec4; --cloud-dk:#8b948a; --storm:#5f6876;
   --calm:#6fcf8a; --breezy:#f2c14e; --windy:#ff5c4d;
   --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
@@ -56,6 +57,22 @@ button:focus-visible,.card:focus-visible{outline:2px solid var(--blaze);outline-
 .stat .v small{font-size:14px;color:var(--muted);font-weight:600}
 
 .hint{color:var(--faint);font-size:13px;text-align:center}
+.chilo{display:flex;gap:12px;margin-top:4px;font-family:var(--display);font-weight:700;font-size:20px;font-variant-numeric:tabular-nums}
+.chilo i{font-style:normal;font-family:var(--body);font-size:11px;font-weight:600;color:var(--muted);margin-right:3px;letter-spacing:.06em}
+.chilo .lo{color:var(--muted)}
+.fchip{grid-column:1/-1;display:flex;align-items:center;gap:8px;color:var(--front);background:var(--front-bg);border:1px solid var(--front-line);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:600}
+.fchip.strong,.fbanner.strong .fhead{color:var(--front-hi)}
+.fbanner{background:var(--front-bg);border:1px solid var(--front-line);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.fhead{display:flex;align-items:center;gap:10px;color:var(--front);flex-wrap:wrap}
+.fhead b{font-family:var(--display);font-weight:800;font-size:20px;letter-spacing:.05em;text-transform:uppercase}
+.fhead span{font-family:var(--display);font-weight:700;font-size:20px;color:var(--fg)}
+.ffacts{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:14px;color:var(--fg)}
+.ffacts b{color:var(--front-hi)}
+.fafter{font-size:14px;color:var(--muted)}.fafter b{color:var(--blaze)}
+.fmore{font-size:12px;color:var(--muted)}
+.fnone{font-size:13px;color:var(--faint);padding-inline:4px}
+.ftag{display:block;margin:4px auto 0;width:max-content;font:700 10px var(--body);letter-spacing:.06em;text-transform:uppercase;color:var(--bg);background:var(--front);border-radius:4px;padding:2px 6px}
+.ftag.post{background:none;color:var(--blaze);border:1px solid var(--blaze)}
 .dirnote{font-size:12px;color:var(--breezy)}
 .templine{display:flex;align-items:center;gap:10px}
 .now .templine{margin-top:14px;gap:14px}
@@ -339,10 +356,10 @@ function apiUrl(){
     latitude:LOCATIONS.map(l=>l.lat).join(","),
     longitude:LOCATIONS.map(l=>l.lon).join(","),
     current:"temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,is_day",
-    hourly:"temperature_2m,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,is_day",
+    hourly:"temperature_2m,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,is_day,pressure_msl",
     daily:"weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,sunrise,sunset",
     temperature_unit:"fahrenheit",wind_speed_unit:"mph",precipitation_unit:"inch",
-    timezone:TZ,forecast_days:"10",
+    timezone:TZ,forecast_days:"10",past_days:"1",
   });
   return `${API}?${p}`;
 }
@@ -354,20 +371,28 @@ function fromApi(loc,r,obs){
   const hourly=[];
   for(let k=i0;k<Math.min(i0+24,h.time.length);k++){
     const hr=+h.time[k].slice(11,13);
-    hourly.push({label:k===i0?"Now":(hr%12||12)+(hr<12?"a":"p"),temp:R(h.temperature_2m[k]),pp:R(h.precipitation_probability[k]),
+    hourly.push({t:h.time[k],label:k===i0?"Now":(hr%12||12)+(hr<12?"a":"p"),temp:R(h.temperature_2m[k]),pp:R(h.precipitation_probability[k]),
       dir:R(h.wind_direction_10m[k]),spd:R(h.wind_speed_10m[k]),gust:R(h.wind_gusts_10m[k]),sky:skyFromCode(h.weather_code[k]),night:h.is_day[k]===0});
   }
-  const daily=d.time.map((ds,k)=>{
+  const today=cu.time.slice(0,10);
+  let iT=d.time.indexOf(today); if(iT<0) iT=0;
+  // daily mean sea-level pressure from the hourly series
+  const pres={};
+  (h.pressure_msl||[]).forEach((v,k)=>{ if(v==null)return; const ds=h.time[k].slice(0,10); (pres[ds]=pres[ds]||[]).push(v); });
+  const presMean=ds=>{const a=pres[ds];return a&&a.length?a.reduce((x,y)=>x+y,0)/a.length:null};
+  const hourAll=h.time.map((t,k)=>({t,dir:h.wind_direction_10m[k],spd:h.wind_speed_10m[k],pres:h.pressure_msl?h.pressure_msl[k]:null}));
+  const dailyAll=d.time.map((ds,k)=>{
     const tw=twilight(ds,loc.lat,loc.lon), dt=new Date(ds+"T12:00:00");
-    return {label:k===0?"Today":DAYS[dt.getDay()],date:`${dt.getMonth()+1}/${dt.getDate()}`,
+    return {iso:ds,pres:presMean(ds),label:k===iT?"Today":DAYS[dt.getDay()],date:`${dt.getMonth()+1}/${dt.getDate()}`,
       hi:R(d.temperature_2m_max[k]),lo:R(d.temperature_2m_min[k]),pp:R(d.precipitation_probability_max[k]),sky:skyFromCode(d.weather_code[k]),
       dir:R(d.wind_direction_10m_dominant[k]),spd:R(d.wind_speed_10m_max[k]),gust:R(d.wind_gusts_10m_max[k]),
       firstAt:+tw.dawn,lastAt:+tw.dusk,firstMin:locMin(tw.dawn),lastMin:locMin(tw.dusk),riseMin:isoMin(d.sunrise[k]),setMin:isoMin(d.sunset[k]),first:hm(tw.dawn),rise:hmLocal(d.sunrise[k]),set:hmLocal(d.sunset[k]),last:hm(tw.dusk)};
   });
+  const daily=dailyAll.slice(iT,iT+10), prevDay=iT>0?dailyAll[iT-1]:null;
   const asOfDate=new Date(cu.time.slice(0,10)+"T12:00:00");
   return {...loc,
     ...currentFrom(loc,cu,obs,asOfDate),
-    hourly,daily};
+    hourly,daily,prevDay,hourAll};
 }
 function currentFrom(loc,cu,obs,asOfDate){
   const day=asOfDate.toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"});
@@ -419,6 +444,7 @@ function mock(loc,i){
     const pp=Math.max(0,Math.min(100,Math.round((front?62:system?40:b.pp*.6)+r()*20-8)));
     const cool=d>=3&&d<7?12:d>=7?7:0;
     daily.push({
+      pres:d===3?1018:d===4?1020:d>4?1015:1011,
       label:d===0?"Today":DAYS[dt.getDay()], date:`${dt.getMonth()+1}/${dt.getDate()}`,
       hi:Math.round(b.t+5-cool+r()*4), lo:Math.round(b.t-14-cool+r()*4),
       pp, sky:skyFromPP(pp,r()),
@@ -428,7 +454,8 @@ function mock(loc,i){
     });
   }
   const c=hourly[0];
-  return {asOf:"Sample data · not live",current:{src:"sample",sky:c.sky,temp:c.temp,feels:c.temp+(b.h>70?4:-1),hum:b.h,precip:b.pp>20?0.02:0,dir:c.dir,spd:c.spd,gust:c.gust},hourly,daily};
+  const prevDay={hi:b.t+6,lo:b.t-12,dir:b.dir,spd:b.spd,pres:1011,pp:0,label:"Yesterday"};
+  return {prevDay,hourAll:[],asOf:"Sample data · not live",current:{src:"sample",sky:c.sky,temp:c.temp,feels:c.temp+(b.h>70?4:-1),hum:b.h,precip:b.pp>20?0.02:0,dir:c.dir,spd:c.spd,gust:c.gust},hourly,daily};
 }
 const SAMPLE = () => LOCATIONS.map((l,i)=>({...l,...mock(l,i)}));
 let DATA = null;
@@ -566,6 +593,70 @@ function sunDial(l){
     ${marker}
   </svg>`;
 }
+/* ---------- cold front detection ----------
+   Day D is flagged when, versus the day before:
+   · the dominant wind turns north (NW–NE) from a southerly/westerly flow, and
+   · highs fall ≥8°F (over D or D+1) or mean pressure rises ≥2.5 mb;
+   or highs fall ≥12°F with pressure rising. "Strong" = highs fall ≥15°F. */
+const isNorth=d=>d!=null&&(d>=290||d<=70);
+const isSouth=d=>d!=null&&d>=110&&d<=250;
+function detectFronts(l){
+  const days=[l.prevDay,...l.daily]; if(!days[0]) return [];
+  const out=[];
+  for(let i=1;i<days.length;i++){
+    const p=days[i-1], d=days[i], n=days[i+1];
+    const drop=p.hi-Math.min(d.hi,n?n.hi:d.hi);
+    const dp=(d.pres!=null&&p.pres!=null)?d.pres-p.pres:null;
+    const presRise=dp!=null&&dp>=2.5;
+    const flip=isNorth(d.dir)&&!isNorth(p.dir);
+    if(!((flip&&(drop>=8||presRise))||(drop>=12&&presRise))) continue;
+    // arrival hour: first hour (from noon the day before) where wind swings to north from south/west
+    let at=null;
+    const hs=l.hourAll||[];
+    const startIso=(i>=2?days[i-1].iso:(l.prevDay&&l.prevDay.iso))||d.iso;
+    for(let k=3;k<hs.length;k++){
+      const t=hs[k].t; if(!t||t.slice(0,10)<startIso|| (t.slice(0,10)===startIso&&+t.slice(11,13)<12)) continue;
+      if(t.slice(0,10)>d.iso) break;
+      if(isNorth(hs[k].dir)&&!isNorth(hs[k-3].dir)&&(hs[k].spd??0)>=6){at=t;break;}
+    }
+    const dayIdx=i-1;                                    // index into l.daily
+    const after=l.daily.slice(dayIdx+1,dayIdx+3).filter(x=>x.pp<40&&x.spd<=18).map(x=>x.label);
+    out.push({dayIdx,day:d,at,prevLabel:i>=2?days[i-1].label:"yesterday",drop:Math.max(0,Math.round(drop)),from:p.hi,to:Math.min(d.hi,n?n.hi:d.hi),
+      dp:dp==null?null:Math.round(dp),strong:drop>=15,maxWind:d.spd,gust:d.gust,after});
+    i++;                                                 // don't double-flag the next day
+  }
+  return out;
+}
+function frontWhen(f){
+  const lbl=f.day.label==="Today"?"today":f.day.label;
+  if(!f.at) return lbl;
+  const h=+f.at.slice(11,13), dayIso=f.at.slice(0,10);
+  const pl=f.prevLabel==="Today"?"today":f.prevLabel;
+  const dLabel=dayIso===f.day.iso?lbl:pl;
+  return `${dLabel} ~${h%12||12} ${h<12?"AM":"PM"}`;
+}
+function frontChip(l){
+  const f=(l.fronts||[])[0]; if(!f) return "";
+  return `<div class="fchip${f.strong?" strong":""}">${frontIcon(14)}<span>${f.strong?"Strong cold front":"Cold front"} · ${frontWhen(f)}</span></div>`;
+}
+const frontIcon=s=>`<svg width="${s}" height="${s}" viewBox="0 0 16 16" aria-hidden="true"><path d="M1 12 L15 12" stroke="currentColor" stroke-width="2"/><path d="M3 12 L5.5 7 L8 12Z M9 12 L11.5 7 L14 12Z" fill="currentColor"/></svg>`;
+function frontBanner(l){
+  const fs=l.fronts||[];
+  if(!fs.length) return `<div class="fnone">No cold fronts in the 10-day forecast.</div>`;
+  const f=fs[0];
+  const facts=[
+    `Highs ${f.from}° → ${f.to}°${f.drop?` <b>(−${f.drop}°)</b>`:""}`,
+    `Wind turns ${card8(f.day.dir)}, up to ${f.maxWind} mph${f.gust?` (G ${f.gust})`:""}`,
+    f.dp!=null&&f.dp>0?`Pressure rising +${f.dp} mb`:null,
+  ].filter(Boolean);
+  const more=fs.length>1?`<span class="fmore">Another front: ${fs.slice(1).map(frontWhen).join(", ")}</span>`:"";
+  return `<div class="fbanner${f.strong?" strong":""}">
+    <div class="fhead">${frontIcon(18)}<b>${f.strong?"Strong cold front":"Cold front"}</b><span>${frontWhen(f)}</span></div>
+    <div class="ffacts">${facts.map(x=>`<span>${x}</span>`).join("")}</div>
+    ${f.after.length?`<div class="fafter">Deer movement usually picks up behind a front. Best sits: <b>${f.after.join(" &amp; ")}</b></div>`:""}
+    ${more}
+  </div>`;
+}
 function srcChip(l){
   const c=l.current;
   if(c.src==="sensor") return `<small class="src ${c.stale?"old":"ok"}" title="Sensor reading from ${l.stationName}">● ${l.station} · ${c.obsClock}${c.stale?" (old)":""}</small>`;
@@ -577,7 +668,7 @@ function renderCards(){
     const c=l.current;
     return `<button class="card" type="button" data-id="${l.id}" aria-label="Open ${l.name}">
       <div class="name"><b>${l.name}</b>${srcChip(l)}</div>
-      <div><div class="templine">${skyIcon(c.sky,52,c.night)}<div class="temp num">${c.temp}<sup>°F</sup></div></div><div class="feels">${c.skyText||SKY[c.sky]} · feels like ${c.feels}°</div></div>
+      <div><div class="templine">${skyIcon(c.sky,52,c.night)}<div class="temp num">${c.temp}<sup>°F</sup></div></div><div class="feels">${c.skyText||SKY[c.sky]}</div><div class="chilo"><span><i>H</i>${l.daily[0].hi}°</span><span class="lo"><i>L</i>${l.daily[0].lo}°</span></div></div>
       <div class="dial">${dial(c.dir,c.spd,104,false,c.dirVar||c.windModel)}</div>
       <div></div>
       <div class="stats">
@@ -585,12 +676,19 @@ function renderCards(){
         <div class="stat"><div class="k">Rain last hr</div><div class="v" style="color:${c.precip?"var(--rain)":"var(--fg)"}">${precipTxt(c.precip)}<small>in</small></div></div>
         <div class="stat"><div class="k">Humidity</div><div class="v">${pct(c.hum)}<small>%</small></div></div>
       </div>
+      ${frontChip(l)}
     </button>`}).join("");
 }
 
+function dayTag(l,i){
+  const fs=l.fronts||[];
+  if(fs.some(f=>f.dayIdx===i)) return `<span class="ftag">Front</span>`;
+  if(fs.some(f=>i>f.dayIdx&&i<=f.dayIdx+2&&l.daily[i].pp<40&&l.daily[i].spd<=18)) return `<span class="ftag post">After</span>`;
+  return "";
+}
 function tableHourly(l){
   const h=l.hourly;
-  return `<table><thead><tr><th scope="row">Time</th>${h.map((x,i)=>`<th class="${i===0?"now":""}">${x.label}</th>`).join("")}</tr></thead><tbody>
+  return `<table><thead><tr><th scope="row">Time</th>${h.map((x,i)=>`<th class="${i===0?"now":""}">${x.label}${(l.fronts||[]).some(f=>f.at&&x.t&&f.at.slice(0,13)===x.t.slice(0,13))?`<span class="ftag">Front</span>`:""}</th>`).join("")}</tr></thead><tbody>
   <tr><th scope="row">Sky</th>${h.map(x=>`<td>${skyIcon(x.sky,34,x.night)}</td>`).join("")}</tr>
   <tr><th scope="row">Temp</th>${h.map(x=>`<td class="t-hi">${x.temp}°</td>`).join("")}</tr>
   <tr><th scope="row">Rain chance</th>${h.map(x=>ppCell(x.pp)).join("")}</tr>
@@ -598,7 +696,7 @@ function tableHourly(l){
 }
 function tableDaily(l,n){
   const d=l.daily.slice(0,n);
-  return `<table><thead><tr><th scope="row">Day</th>${d.map((x,i)=>`<th class="${i===0?"now":""}">${x.label}<small>${x.date}</small></th>`).join("")}</tr></thead><tbody>
+  return `<table><thead><tr><th scope="row">Day</th>${d.map((x,i)=>`<th class="${i===0?"now":""}">${x.label}<small>${x.date}</small>${dayTag(l,i)}</th>`).join("")}</tr></thead><tbody>
   <tr><th scope="row">Sky</th>${d.map(x=>`<td>${skyIcon(x.sky,36)}</td>`).join("")}</tr>
   <tr><th scope="row">High</th>${d.map(x=>`<td class="t-hi">${x.hi}°</td>`).join("")}</tr>
   <tr><th scope="row">Low</th>${d.map(x=>`<td class="t-lo">${x.lo}°</td>`).join("")}</tr>
@@ -628,7 +726,7 @@ function renderDetail(dirn){
         <h2>${l.name}</h2>
         <div class="date">${l.asOf}</div>
         <div class="templine">${skyIcon(c.sky,84,c.night)}<div class="bigtemp">${c.temp}<sup>°F</sup></div></div>
-        <div class="feels"><b class="skylbl">${c.skyText||SKY[c.sky]}</b> · feels like ${c.feels}°</div>
+        <div class="feels"><b class="skylbl">${c.skyText||SKY[c.sky]}</b></div>
         <div class="hilo" aria-label="Today's high and low"><span><i>High</i>${t.hi}°</span><span class="lo"><i>Low</i>${t.lo}°</span></div>
         <div class="stats">
           <div class="stat"><div class="k">Rain last hr</div><div class="v" style="color:${c.precip?"var(--rain)":"var(--fg)"}">${precipTxt(c.precip)}<small>in</small></div></div>
@@ -666,6 +764,7 @@ function renderDetail(dirn){
       </div>
       ${(()=>{const ls=lightStatus(l);return ls?`<div class="lseg cd" id="lightcd"><span class="k">${ls.k}</span><b>${ls.v}</b></div>`:""})()}
     </div>
+    ${frontBanner(l)}
     ${radarSection(l)}
     <div class="fc-head">
       <div class="tabs" role="tablist">
@@ -720,7 +819,7 @@ document.querySelector("h1").addEventListener("click",showOverview);
 document.querySelector("h1").style.cursor="pointer";
 /* ---------- loading, caching, refresh ---------- */
 const $status=document.getElementById("status"), $upd=document.getElementById("updated"), $btn=document.getElementById("refresh");
-const CACHE_KEY="bw-cache-v5";
+const CACHE_KEY="bw-cache-v6";
 let lastFetch=0, live=false, timer=null;
 
 function render(){ if(!DATA)return; if($dt.hidden) renderCards(); else { renderCards(); const y=window.scrollY; renderDetail(); $dt.className="detail"; window.scrollTo(0,y); } }
@@ -741,7 +840,7 @@ function setStatus(){
 }
 function apply(json,obs,ts){
   const arr=Array.isArray(json)?json:[json];
-  DATA=LOCATIONS.map((l,i)=>fromApi(l,arr[i],obs&&obs[i]));
+  DATA=LOCATIONS.map((l,i)=>fromApi(l,arr[i],obs&&obs[i])); DATA.forEach(l=>l.fronts=detectFronts(l));
   lastFetch=ts; live=true; render(); setStatus();
 }
 async function getObs(id){
@@ -781,7 +880,7 @@ async function load(manual=false){
     try{localStorage.setItem(CACHE_KEY,JSON.stringify({ts,json,obs}))}catch(_){}
   }catch(err){
     console.warn("Live weather fetch failed:",err);
-    if(!DATA){ DATA=SAMPLE(); live=false; render(); }
+    if(!DATA){ DATA=SAMPLE(); DATA.forEach(l=>l.fronts=detectFronts(l)); live=false; render(); }
     setStatus();
     $upd.textContent= live ? `Couldn't refresh (${err.message}). Showing last update.` : "Live data unavailable here. Showing sample data.";
   }finally{
