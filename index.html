@@ -124,6 +124,22 @@ button:focus-visible,.card:focus-visible{outline:2px solid var(--blaze);outline-
 .tabs{display:inline-flex;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:3px;gap:3px}
 .tabs button{background:none;border:0;color:var(--muted);font:700 15px var(--display);text-transform:uppercase;letter-spacing:.06em;padding:8px 18px;border-radius:8px;cursor:pointer}
 .tabs button[aria-selected="true"]{background:var(--blaze);color:#1a0d02}
+/* radar (loads only when opened) */
+.radar{border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow:hidden}
+.radar-tog{width:100%;display:flex;align-items:center;gap:12px;background:none;border:0;color:var(--fg);padding:14px 16px;cursor:pointer;text-align:left;font:inherit}
+.radar-tog:hover{background:var(--surface-2)}
+.radar-tog .t{font-family:var(--display);font-weight:800;font-size:20px;letter-spacing:.06em;text-transform:uppercase}
+.radar-tog .s{color:var(--muted);font-size:13px;flex:1;min-width:0}
+.radar-tog .chev{color:var(--blaze);font-size:18px;transition:transform .15s}
+.radar-tog[aria-expanded="true"] .chev{transform:rotate(90deg)}
+.radar-body{padding:0 16px 16px;display:flex;flex-direction:column;gap:10px}
+.radar-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.radar-bar .tabs button{padding:6px 14px;font-size:14px}
+.radar-bar a{color:var(--muted);font-size:13px}
+.radar-frame{position:relative;background:var(--bg);border:1px solid var(--line);border-radius:10px;min-height:220px;display:grid;place-items:center;overflow:hidden}
+.radar-frame img{display:block;width:100%;height:auto;max-width:900px}
+.radar-msg{color:var(--muted);font-size:14px;padding:24px;text-align:center}
+.radar-note{color:var(--faint);font-size:12px}
 .fc-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
 .legend{display:flex;gap:12px;font-size:12px;color:var(--muted);flex-wrap:wrap}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
@@ -206,11 +222,11 @@ footer{color:var(--faint);font-size:12px;display:flex;justify-content:space-betw
 /* ---------- config: add a region here ---------- */
 const LOCATIONS = [
   // lat/lon = forecast point (model). station = NWS sensor used for "Now" readings.
-  {id:"hou", name:"Houston",     abbr:"HOU",  lat:29.6454,  lon:-95.2789,   station:"KHOU", stationName:"Hobby Airport",
+  {id:"hou", name:"Houston",     abbr:"HOU",  lat:29.6454,  lon:-95.2789,   station:"KHOU", stationName:"Hobby Airport", radar:"KHGX", radarName:"Houston/Galveston",
    base:{t:79,h:78,dir:150,spd:9,pp:30},  sun:["7:22","6:51"]},
-  {id:"sat", name:"San Antonio", abbr:"SA",   lat:29.3842,  lon:-98.5811,   station:"KSKF", stationName:"Kelly Field",
+  {id:"sat", name:"San Antonio", abbr:"SA",   lat:29.3842,  lon:-98.5811,   station:"KSKF", stationName:"Kelly Field", radar:"KEWX", radarName:"New Braunfels",
    base:{t:84,h:55,dir:175,spd:12,pp:10}, sun:["7:35","7:04"]},
-  {id:"rks", name:"Rocksprings", abbr:"ROCK", lat:30.10205, lon:-100.16536, station:"KECU", stationName:"Edwards Co. Airport",
+  {id:"rks", name:"Rocksprings", abbr:"ROCK", lat:30.10205, lon:-100.16536, station:"KECU", stationName:"Edwards Co. Airport", radar:"KDFX", radarName:"Laughlin AFB",
    base:{t:81,h:34,dir:220,spd:16,pp:0},  sun:["7:42","7:12"]},
 ];
 const OBS_STALE_MIN=90;   // flag a sensor reading older than this
@@ -458,7 +474,7 @@ function dial(from,spd,size,big,vrb){
 const arrowMini=(from,spd)=>`<svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><g transform="rotate(${(from+180)%360} 11 11)"><line x1="11" y1="19" x2="11" y2="7" stroke="${windColor(spd)}" stroke-width="2.5" stroke-linecap="round"/><path d="M11 2 l-5 7 h10 z" fill="${windColor(spd)}"/></g></svg>`;
 
 /* ---------- render ---------- */
-let selected="rks", tab="hourly";
+let selected="rks", tab="hourly", radarOpen=false, radarMode="loop";
 try{selected=localStorage.getItem("bw-sel")||selected;tab=localStorage.getItem("bw-tab")||tab}catch(e){}
 
 function lightStatus(l){
@@ -467,6 +483,34 @@ function lightStatus(l){
   if(now<d0.firstAt) return {k:"First light in",v:dur(d0.firstAt-now)};
   if(now<d0.lastAt) return {k:"Last light in",v:dur(d0.lastAt-now)};
   return {k:"First light tomorrow",v:`${d1?d1.first:"—"} am`};
+}
+function radarSection(l){
+  const page=`https://radar.weather.gov/station/${l.radar}/standard`;
+  let body="";
+  if(radarOpen){
+    const bust=Math.floor(Date.now()/3e5);                     // new image at most every 5 min
+    const src=`https://radar.weather.gov/ridge/standard/${l.radar}_${radarMode==="loop"?"loop":"0"}.gif?t=${bust}`;
+    body=`<div class="radar-body">
+      <div class="radar-bar">
+        <div class="tabs" role="tablist" aria-label="Radar view">
+          <button type="button" data-rmode="loop" aria-selected="${radarMode==="loop"}">Loop</button>
+          <button type="button" data-rmode="latest" aria-selected="${radarMode==="latest"}">Latest</button>
+        </div>
+        <a href="${page}" target="_blank" rel="noopener">Full NWS radar ↗</a>
+      </div>
+      <div class="radar-frame">
+        <div class="radar-msg" data-radar-msg>Loading ${l.radar} radar…</div>
+        <img alt="${l.radarName} (${l.radar}) radar ${radarMode}" src="${src}" hidden
+          onload="this.hidden=false;this.previousElementSibling.hidden=true"
+          onerror="this.previousElementSibling.textContent='Radar image unavailable right now. Try Full NWS radar.'">
+      </div>
+      <div class="radar-note">NWS ${l.radar} · ${l.radarName} · base reflectivity with active warnings. Loop covers about the last hour.</div>
+    </div>`;
+  }
+  return `<section class="radar">
+    <button class="radar-tog" type="button" data-act="radar" aria-expanded="${radarOpen}">
+      <span class="t">Radar</span><span class="s">${radarOpen?`${l.radar} · ${l.radarName}`:"Tap to load"}</span><span class="chev" aria-hidden="true">›</span>
+    </button>${body}</section>`;
 }
 function srcChip(l){
   const c=l.current;
@@ -567,6 +611,7 @@ function renderDetail(dirn){
       </div>
       ${(()=>{const ls=lightStatus(l);return ls?`<div class="lseg cd" id="lightcd"><span class="k">${ls.k}</span><b>${ls.v}</b></div>`:""})()}
     </div>
+    ${radarSection(l)}
     <div class="fc-head">
       <div class="tabs" role="tablist">
         ${[["hourly","Hourly"],["5","5-Day"],["7","7-Day"],["10","10-Day"]].map(([k,v])=>`<button role="tab" type="button" data-tab="${k}" aria-selected="${tab===k}">${v}</button>`).join("")}
@@ -598,6 +643,9 @@ $dt.addEventListener("click",e=>{
   if(t){ tab=t.dataset.tab; try{localStorage.setItem("bw-tab",tab)}catch(_){} const y=window.scrollY; renderDetail(); $dt.className="detail"; window.scrollTo(0,y); return; }
   const l=e.target.closest("[data-loc]");
   if(l){ const i=DATA.findIndex(x=>x.id===selected), j=DATA.findIndex(x=>x.id===l.dataset.loc); if(i!==j) openLoc(l.dataset.loc,j>i?1:-1); return; }
+  if(e.target.closest("[data-act=radar]")){ radarOpen=!radarOpen; const y=window.scrollY; renderDetail(); $dt.className="detail"; window.scrollTo(0,y); return; }
+  const rm=e.target.closest("[data-rmode]");
+  if(rm){ radarMode=rm.dataset.rmode; const y=window.scrollY; renderDetail(); $dt.className="detail"; window.scrollTo(0,y); return; }
   if(e.target.closest("[data-act=back]")) showOverview();
 });
 document.addEventListener("keydown",e=>{
