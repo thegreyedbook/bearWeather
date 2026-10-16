@@ -80,7 +80,11 @@ button:focus-visible,.card:focus-visible{outline:2px solid var(--blaze);outline-
 .switch button[aria-current="true"]{border-color:var(--blaze);color:var(--blaze);background:var(--surface-2)}
 .switch .dot{width:8px;height:8px;border-radius:50%}
 
-.hero{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:22px;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:24px;align-items:center}
+.hero{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:22px;display:grid;
+  grid-template-columns:minmax(0,1.15fr) auto minmax(0,1fr) auto;grid-template-areas:"now wind wtext sun";gap:24px;align-items:center}
+.hero>.now{grid-area:now}.hero>.wdial{grid-area:wind}.hero>.windtext{grid-area:wtext}.hero>.sunbox{grid-area:sun}
+.wdial{width:260px;max-width:100%}.sunbox{width:220px;max-width:100%}
+.wdial svg,.sunbox svg{display:block;width:100%;height:auto}
 .now h2{margin:0;font-family:var(--display);font-weight:800;font-size:30px;text-transform:uppercase;letter-spacing:.04em;line-height:1}
 .now .date{color:var(--muted);font-size:13px;margin-top:4px}
 .now .bigtemp{font-family:var(--display);font-weight:700;font-size:96px;line-height:.9;margin-top:14px;font-variant-numeric:tabular-nums}
@@ -168,15 +172,18 @@ thead th.now{color:var(--blaze)}
 
 footer{color:var(--faint);font-size:12px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
 
-@media (max-width:980px){
-  .hero{grid-template-columns:1fr auto;}
-  .hero .windtext{grid-column:1/-1}
+@media (max-width:1120px){
+  .hero{grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"now now now" "wind wtext sun"}
+}
+@media (max-width:760px){
+  .hero{grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"now now" "wind sun" "wtext wtext";justify-items:center}
+  .wdial,.sunbox{width:100%;max-width:240px}
 }
 @media (max-width:900px){
   .cards{grid-template-columns:1fr}
 }
 @media (max-width:600px){
-  .hero{grid-template-columns:1fr;justify-items:center;text-align:center;padding:18px}
+  .hero{text-align:center;padding:18px;gap:16px}
   .now .stats{text-align:left}
   .windtext{align-items:center}
   .lightstrip{grid-template-columns:1fr;gap:12px}
@@ -316,6 +323,10 @@ function twilight(dateStr,lat,lon,deg=-6){
   const toDate=j=>new Date((j+0.5-J1970)*DAYMS);
   return {dawn:toDate(Jrise),dusk:toDate(Jset)};
 }
+const FMT_H23=new Intl.DateTimeFormat("en-US",{timeZone:TZ,hour:"2-digit",minute:"2-digit",hourCycle:"h23"});
+const locMin=dt=>{const [h,m]=FMT_H23.format(dt).split(":").map(Number);return (h%24)*60+m};
+const isoMin=s=>+s.slice(11,13)*60+ +s.slice(14,16);
+const hmToMin=s=>{const [h,m]=s.split(":").map(Number);return h*60+m};
 const FMT_HM=new Intl.DateTimeFormat("en-US",{timeZone:TZ,hour:"numeric",minute:"2-digit",hour12:true});
 const hm=dt=>FMT_HM.format(dt).replace(/\s?[AP]M/,"");
 const hmLocal=s=>{const [h,m]=s.slice(11,16).split(":").map(Number);return `${h%12||12}:${String(m).padStart(2,"0")}`};
@@ -351,7 +362,7 @@ function fromApi(loc,r,obs){
     return {label:k===0?"Today":DAYS[dt.getDay()],date:`${dt.getMonth()+1}/${dt.getDate()}`,
       hi:R(d.temperature_2m_max[k]),lo:R(d.temperature_2m_min[k]),pp:R(d.precipitation_probability_max[k]),sky:skyFromCode(d.weather_code[k]),
       dir:R(d.wind_direction_10m_dominant[k]),spd:R(d.wind_speed_10m_max[k]),gust:R(d.wind_gusts_10m_max[k]),
-      firstAt:+tw.dawn,lastAt:+tw.dusk,first:hm(tw.dawn),rise:hmLocal(d.sunrise[k]),set:hmLocal(d.sunset[k]),last:hm(tw.dusk)};
+      firstAt:+tw.dawn,lastAt:+tw.dusk,firstMin:locMin(tw.dawn),lastMin:locMin(tw.dusk),riseMin:isoMin(d.sunrise[k]),setMin:isoMin(d.sunset[k]),first:hm(tw.dawn),rise:hmLocal(d.sunrise[k]),set:hmLocal(d.sunset[k]),last:hm(tw.dusk)};
   });
   const asOfDate=new Date(cu.time.slice(0,10)+"T12:00:00");
   return {...loc,
@@ -413,6 +424,7 @@ function mock(loc,i){
       pp, sky:skyFromPP(pp,r()),
       dir:front?345:Math.round(b.dir+r()*40-20)%360, spd, gust:spd+Math.round(6+r()*8),
       first:addMin(loc.sun[0],d-25), rise:addMin(loc.sun[0],d), set:addMin(loc.sun[1],-d), last:addMin(loc.sun[1],-d+25),
+      firstMin:hmToMin(addMin(loc.sun[0],d-25)), riseMin:hmToMin(addMin(loc.sun[0],d)), setMin:hmToMin(addMin(loc.sun[1],-d))+720, lastMin:hmToMin(addMin(loc.sun[1],-d+25))+720,
     });
   }
   const c=hourly[0];
@@ -512,6 +524,48 @@ function radarSection(l){
       <span class="t">Radar</span><span class="s">${radarOpen?`${l.radar} · ${l.radarName}`:"Tap to load"}</span><span class="chev" aria-hidden="true">›</span>
     </button>${body}</section>`;
 }
+/* 24-hour sun clock: midnight at top, noon at bottom, time runs clockwise */
+function sunDial(l){
+  const d=l.daily[0]; if(!d||d.riseMin==null) return "";
+  const S=220,c=110,rIn=80,rRing=95,TAU=Math.PI*2;
+  const now=locMin(new Date());
+  const P=(m,r)=>{const t=m/1440*TAU;return [(c+r*Math.sin(t)).toFixed(2),(c-r*Math.cos(t)).toFixed(2)]};
+  const sector=(a,b,fill)=>{const span=(b-a+1440)%1440;const[x1,y1]=P(a,rIn),[x2,y2]=P(b,rIn);
+    return `<path d="M${c} ${c}L${x1} ${y1}A${rIn} ${rIn} 0 ${span>720?1:0} 1 ${x2} ${y2}Z" fill="${fill}"/>`};
+  const arc=(a,b,r,col)=>{if(b<=a)return"";const[x1,y1]=P(a,r),[x2,y2]=P(b,r);
+    return `<path d="M${x1} ${y1}A${r} ${r} 0 ${b-a>720?1:0} 1 ${x2} ${y2}" fill="none" stroke="${col}" stroke-width="4" stroke-linecap="butt"/>`};
+  const NIGHT="#1f3a78",TWI="#3f6fc6",DAY="#f6dda2";
+  const r=rng(7); let stars="";
+  for(let i=0;i<70;i++){const a=r()*TAU,rr=Math.sqrt(r())*(rIn-4);stars+=`<circle cx="${(c+rr*Math.cos(a)).toFixed(1)}" cy="${(c+rr*Math.sin(a)).toFixed(1)}" r="${(r()*.9+.3).toFixed(2)}" fill="#cfd8ff" opacity="${(r()*.6+.3).toFixed(2)}"/>`}
+  // elapsed-today arc, colored by phase
+  const phases=[[0,d.firstMin,"#2b4fa8"],[d.firstMin,d.riseMin,TWI],[d.riseMin,d.setMin,"#f2b84b"],[d.setMin,d.lastMin,TWI],[d.lastMin,1440,"#2b4fa8"]];
+  const elapsed=phases.map(([a,b,col])=>now>a?arc(a,Math.min(b,now),rIn+3,col):"").join("");
+  // event ticks on the ring
+  const tick=(m,col)=>{const[x1,y1]=P(m,rIn+6),[x2,y2]=P(m,rIn+20);return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${col}" stroke-width="2"/>`};
+  const ticks=tick(d.firstMin,"var(--blaze)")+tick(d.riseMin,"var(--sun)")+tick(d.setMin,"var(--sun)")+tick(d.lastMin,"var(--blaze)");
+  // marker: sun by day, moon at night
+  const isDay=now>=d.riseMin&&now<d.setMin;
+  const [mx,my]=P(now,rRing),[lx,ly]=P(now,rIn);
+  const marker=isDay
+    ?`<g transform="translate(${mx} ${my})">${[0,45,90,135,180,225,270,315].map(a=>{const t=a*Math.PI/180;return `<line x1="${(Math.cos(t)*7).toFixed(1)}" y1="${(Math.sin(t)*7).toFixed(1)}" x2="${(Math.cos(t)*10).toFixed(1)}" y2="${(Math.sin(t)*10).toFixed(1)}" stroke="var(--sun)" stroke-width="2" stroke-linecap="round"/>`}).join("")}<circle r="5.5" fill="var(--sun)"/></g>`
+    :`<g transform="translate(${mx} ${my})"><circle r="7" fill="var(--moon)"/><circle cx="3.5" cy="-2.5" r="6" fill="var(--surface-2)"/></g>`;
+  const dl=d.setMin-d.riseMin, dlTxt=`${Math.floor(dl/60)}:${String(dl%60).padStart(2,"0")}`;
+  const lbl=(t,y)=>`<text x="${c}" y="${y}" text-anchor="middle" fill="var(--muted)" font-family="Barlow Condensed,sans-serif" font-weight="700" font-size="11" letter-spacing="2">${t}</text>`;
+  return `<svg viewBox="0 0 ${S} ${S}" role="img" aria-label="Sun clock: daylight ${dlTxt} hours, first light ${d.first} am, sunrise ${d.rise} am, sunset ${d.set} pm, last light ${d.last} pm">
+    <circle cx="${c}" cy="${c}" r="${c-2}" fill="var(--surface-2)" stroke="var(--line)" stroke-width="1.5"/>
+    ${lbl("MIDNIGHT",c-rIn-9)}${lbl("NOON",c+rIn+19)}
+    <text x="${c+rIn+15}" y="${c+4}" text-anchor="middle" fill="var(--faint)" font-family="Barlow,sans-serif" font-size="9">6a</text>
+    <text x="${c-rIn-15}" y="${c+4}" text-anchor="middle" fill="var(--faint)" font-family="Barlow,sans-serif" font-size="9">6p</text>
+    <circle cx="${c}" cy="${c}" r="${rIn}" fill="${NIGHT}"/>${stars}
+    ${sector(d.firstMin,d.riseMin,TWI)}${sector(d.setMin,d.lastMin,TWI)}${sector(d.riseMin,d.setMin,DAY)}
+    ${elapsed}${ticks}
+    <line x1="${c}" y1="${c}" x2="${lx}" y2="${ly}" stroke="#ffffff" stroke-opacity=".55" stroke-width="1.5" stroke-dasharray="2 3"/>
+    <rect x="${c-45}" y="${c-22}" width="90" height="44" rx="10" fill="var(--bg)" fill-opacity=".82"/>
+    <text x="${c}" y="${c-7}" text-anchor="middle" fill="var(--muted)" font-family="Barlow Condensed,sans-serif" font-weight="700" font-size="10" letter-spacing="1.5">DAYLIGHT</text>
+    <text x="${c}" y="${c+15}" text-anchor="middle" fill="var(--fg)" font-family="Barlow Condensed,sans-serif" font-weight="800" font-size="22">${dlTxt}<tspan font-size="11" fill="var(--muted)" font-weight="600"> HRS</tspan></text>
+    ${marker}
+  </svg>`;
+}
 function srcChip(l){
   const c=l.current;
   if(c.src==="sensor") return `<small class="src ${c.stale?"old":"ok"}" title="Sensor reading from ${l.stationName}">● ${l.station} · ${c.obsClock}${c.stale?" (old)":""}</small>`;
@@ -581,7 +635,7 @@ function renderDetail(dirn){
           <div class="stat"><div class="k">Humidity</div><div class="v">${pct(c.hum)}<small>%</small></div></div>
         </div>
       </div>
-      ${dial(c.dir,c.spd,260,true,c.dirVar||c.windModel)}
+      <div class="wdial">${dial(c.dir,c.spd,260,true,c.dirVar||c.windModel)}</div>
       <div class="windtext">
         <span class="k">Wind from</span>
         <span class="from" style="color:${windColor(c.spd)}">${c.dirVar?"Variable":card8(c.dir)}</span>
@@ -591,6 +645,7 @@ function renderDetail(dirn){
         <span class="k" style="margin-top:8px">Next 6 hours (forecast)</span>
         <div class="trend">${l.hourly.slice(1,7).map(h=>`<div>${arrowMini(h.dir,h.spd)}<span class="n" style="color:${windColor(h.spd)}">${h.spd}</span>${h.label}</div>`).join("")}</div>
       </div>
+      <div class="sunbox" id="sundial">${sunDial(l)}</div>
     </div>
     <div class="lightstrip" aria-label="Light times today">
       <div class="lseg">
@@ -665,7 +720,7 @@ document.querySelector("h1").addEventListener("click",showOverview);
 document.querySelector("h1").style.cursor="pointer";
 /* ---------- loading, caching, refresh ---------- */
 const $status=document.getElementById("status"), $upd=document.getElementById("updated"), $btn=document.getElementById("refresh");
-const CACHE_KEY="bw-cache-v4";
+const CACHE_KEY="bw-cache-v5";
 let lastFetch=0, live=false, timer=null;
 
 function render(){ if(!DATA)return; if($dt.hidden) renderCards(); else { renderCards(); const y=window.scrollY; renderDetail(); $dt.className="detail"; window.scrollTo(0,y); } }
@@ -673,6 +728,7 @@ function tickLight(){
   const el=document.getElementById("lightcd"); if(!el||!DATA||$dt.hidden) return;
   const l=DATA.find(x=>x.id===selected), ls=l&&lightStatus(l); if(!ls) return;
   el.innerHTML=`<span class="k">${ls.k}</span><b>${ls.v}</b>`;
+  const sd=document.getElementById("sundial"); if(sd) sd.innerHTML=sunDial(l);
 }
 function setStatus(){
   tickLight();
