@@ -180,7 +180,12 @@ button:focus-visible,.card:focus-visible{outline:2px solid var(--blaze);outline-
 .radar-bar .tabs button{padding:6px 14px;font-size:14px}
 .radar-bar a{color:var(--muted);font-size:13px}
 .radar-frame{position:relative;background:var(--bg);border:1px solid var(--line);border-radius:10px;min-height:220px;display:grid;place-items:center;overflow:hidden}
-.radar-frame img{display:block;width:100%;height:auto;max-width:900px}
+.rimg{position:relative;width:100%;max-width:900px}
+.radar-frame img{display:block;width:100%;height:auto}
+.rmark{position:absolute;transform:translate(-50%,-50%);pointer-events:none}
+.rmark i{display:block;width:12px;height:12px;border-radius:50%;background:#e01e1e;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.6)}
+.rmark span{position:absolute;left:14px;top:50%;transform:translateY(-50%);font:700 13px var(--body);color:#c00;white-space:nowrap;
+  text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 2px #fff}
 .radar-msg{color:var(--muted);font-size:14px;padding:24px;text-align:center}
 .radar-note{color:var(--faint);font-size:12px}
 .fc-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
@@ -603,6 +608,12 @@ function lightStatus(l){
   if(now<d0.lastAt) return {k:"Last light in",v:dur(d0.lastAt-now)};
   return {k:"First light tomorrow",v:`${d1?d1.first:"—"} am`};
 }
+/* Fixed overlay points on NWS RIDGE standard images (600×550 px).
+   KDFX calibrated from the town dots for Sonora, Del Rio, Uvalde and Laredo
+   (linear lat/lon fit, max error 0.6 px ≈ 0.3 mi). Position = % of image width/height. */
+const RADAR_MARKS={
+  KDFX:[{label:"Rocksprings",x:(318.0/600*100).toFixed(2),y:(172.7/550*100).toFixed(2)}],
+};
 function radarSection(l){
   const page=`https://radar.weather.gov/station/${l.radar}/standard`;
   let body="";
@@ -619,9 +630,12 @@ function radarSection(l){
       </div>
       <div class="radar-frame">
         <div class="radar-msg" data-radar-msg>Loading ${l.radar} radar…</div>
-        <img alt="${l.radarName} (${l.radar}) radar ${radarMode}" src="${src}" hidden
-          onload="this.hidden=false;this.previousElementSibling.hidden=true"
-          onerror="this.previousElementSibling.textContent='Radar image unavailable right now. Try Full NWS radar.'">
+        <div class="rimg" hidden>
+          <img alt="${l.radarName} (${l.radar}) radar ${radarMode}" src="${src}"
+            onload="this.parentElement.hidden=false;this.parentElement.previousElementSibling.hidden=true"
+            onerror="this.parentElement.previousElementSibling.textContent='Radar image unavailable right now. Try Full NWS radar.'">
+          ${(RADAR_MARKS[l.radar]||[]).map(m=>`<div class="rmark" style="left:${m.x}%;top:${m.y}%"><i></i><span>${m.label}</span></div>`).join("")}
+        </div>
       </div>
       <div class="radar-note">NWS ${l.radar} · ${l.radarName} · base reflectivity with active warnings. Loop covers about the last hour.</div>
     </div>`;
