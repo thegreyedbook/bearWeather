@@ -90,7 +90,7 @@ button:focus-visible,.card:focus-visible{outline:2px solid var(--blaze);outline-
 .windtext .k{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
 .windtext .from{font-family:var(--display);font-weight:800;font-size:56px;line-height:1}
 .windtext .desc{font-size:18px;font-weight:600}
-.windtext .scent{color:var(--blaze);font-size:16px;font-weight:700;border-top:1px solid var(--line);padding-top:10px;margin-top:4px}
+
 .windtext .gust{color:var(--muted);font-size:14px}
 .trend{display:flex;gap:4px;align-items:flex-end;margin-top:8px}
 .trend div{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:var(--faint)}
@@ -520,7 +520,6 @@ function renderDetail(dirn){
         <span class="from" style="color:${windColor(c.spd)}">${card8(c.dir)}</span>
         <span class="desc">${beaufort(c.spd)}</span>
         <span class="gust">${c.dir==null?"No measurable wind":`${c.spd} mph sustained · ${gustTxt(c.gust)}`}</span>
-        <span class="scent">${c.dir==null?"Calm: scent pools, no steady drift":`Scent drifts ${card8((c.dir+180)%360)} →`}</span>
         <span class="k" style="margin-top:8px">Next 6 hours (forecast)</span>
         <div class="trend">${l.hourly.slice(1,7).map(h=>`<div>${arrowMini(h.dir,h.spd)}<span class="n" style="color:${windColor(h.spd)}">${h.spd}</span>${h.label}</div>`).join("")}</div>
       </div>
