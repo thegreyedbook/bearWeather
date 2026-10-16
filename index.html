@@ -304,6 +304,14 @@ function metarWind(raw){
   return {spd,dir,gust,vrb:m[1]==="VRB",range};
 }
 const HPA_IN=33.8639;
+function altSrc(p,src){
+  if(src==="metar") return metarAlt(p.rawMessage);
+  if(src==="slp") return p.seaLevelPressure&&p.seaLevelPressure.value!=null?p.seaLevelPressure.value/3386.39:null;
+  const bp=p.barometricPressure&&p.barometricPressure.value, el=p.elevation&&p.elevation.value;
+  if(bp==null||el==null) return null;
+  const P=bp/100-0.3, n=0.190284;
+  return P*Math.pow(1+(Math.pow(1013.25,n)*0.0065/288)*(el/Math.pow(P,n)),1/n)/HPA_IN;
+}
 function altFrom(p){
   const a=metarAlt(p.rawMessage); if(a!=null) return a;
   if(p.seaLevelPressure&&p.seaLevelPressure.value!=null) return p.seaLevelPressure.value/3386.39;
@@ -326,17 +334,33 @@ function procHist(j){
     const pin=m?+m[1]/100:(q(p.precipitationLastHour,"in")??0);
     return {t:+new Date(p.timestamp), p:pin};
   });
-  const pres=ps.map(p=>({t:+new Date(p.timestamp),a:altFrom(p)})).filter(x=>x.a!=null&&x.a>27&&x.a<32);
+  const ok=v=>v!=null&&v>27&&v<32;
+  const best=["metar","slp","stn"].map(src=>({src,n:ps.filter(p=>ok(altSrc(p,src))).length})).sort((a,b)=>b.n-a.n)[0];
+  const pres=ps.map(p=>({t:+new Date(p.timestamp),a:altSrc(p,best.src)})).filter(x=>ok(x.a));
   return {gauge,rows,pres,n:ps.length};
+}
+/* temperature / dew point (°C) from METAR: precise T-group in remarks, else the body "20/10" group */
+function metarTD(raw){
+  if(!raw) return {t:null,d:null};
+  const [body,rmk=""]=raw.split(" RMK");
+  const tg=rmk.match(/\sT([01])(\d{3})([01])(\d{3})\b/);
+  if(tg) return {t:(tg[1]==="1"?-1:1)*+tg[2]/10, d:(tg[3]==="1"?-1:1)*+tg[4]/10};
+  const m=body.match(/\s(M?\d{2})\/(M?\d{2})?\s/); const c=x=>x==null?null:(x[0]==="M"?-1:1)*+x.replace("M","");
+  return m?{t:c(m[1]),d:c(m[2]??null)}:{t:null,d:null};
 }
 function parseObs(j){
   const p=j&&(j.properties||j); if(!p||!p.timestamp) return null;
-  const temp=q(p.temperature,"F"); if(temp==null) return null;
+  const mt=metarTD(p.rawMessage);
+  const tC=p.temperature&&p.temperature.value!=null?(/degF/.test(p.temperature.unitCode||"")?(p.temperature.value-32)*5/9:p.temperature.value):mt.t;
+  if(tC==null) return null;
+  const temp=tC*9/5+32;
+  const dC=p.dewpoint&&p.dewpoint.value!=null?(/degF/.test(p.dewpoint.unitCode||"")?(p.dewpoint.value-32)*5/9:p.dewpoint.value):mt.d;
+  const rhCalc=(dC!=null)?Math.min(100,100*Math.exp(17.625*dC/(243.04+dC))/Math.exp(17.625*tC/(243.04+tC))):null;
   const mw=metarWind(p.rawMessage);
   const apiSpd=q(p.windSpeed,"mph");
   return {time:p.timestamp, text:p.textDescription||"",
     temp, feels:q(p.heatIndex,"F")??q(p.windChill,"F")??temp,
-    hum:q(p.relativeHumidity), precip:q(p.precipitationLastHour,"in"),
+    hum:q(p.relativeHumidity)??rhCalc, precip:q(p.precipitationLastHour,"in"),
     spd:   mw?mw.spd:apiSpd,                                   // null = not reported (NOT calm)
     dir:   mw?mw.dir:q(p.windDirection),
     gust:  mw?mw.gust:q(p.windGust,"mph"),
@@ -730,14 +754,18 @@ function buildPres(l,obs,hist){
   const h=l._h, H=36e5, now=Date.now(), hourStart=Math.floor(now/H)*H;
   const model=k=>h&&h.pres[k]!=null?h.pres[k]/HPA_IN:null;
   const mNow=h?model(h.i0):null;
-  let past=[], src="model", cur=null;
+  let past=[], src="model", cur=null, senseLast=null;
   const rows=hist&&hist.pres?hist.pres.filter(r=>r.t>now-25*H):[];
   const why=!hist?"history":(!hist.pres||!hist.pres.length)?"nopress":rows.length<6?"few":null;
-  if(rows.length>=6){ past=rows.map(r=>({t:r.t,v:r.a})); src="sensor"; }
+  if(rows.length>=6){
+    const bins={}; for(const r of rows){const b=Math.floor(r.t/18e5); (bins[b]=bins[b]||[]).push(r);}
+    const pts=Object.values(bins).map(a=>({t:a.reduce((x,r)=>x+r.t,0)/a.length,v:a.reduce((x,r)=>x+r.a,0)/a.length})).sort((a,b)=>a.t-b.t);
+    past=pts.map((x,i)=>{const w=pts.slice(Math.max(0,i-1),i+2);return {t:x.t,v:w.reduce((a,b)=>a+b.v,0)/w.length}});
+    src="sensor"; senseLast=rows[rows.length-1].a;
+  }
   else if(h){ for(let k=h.i0-24;k<=h.i0;k++){const v=model(k); if(v!=null) past.push({t:hourStart+(k-h.i0)*H,v});} }
-  cur=(obs&&obs.alt!=null)?obs.alt:(past.length?past[past.length-1].v:mNow);
+  cur=senseLast!=null?senseLast:(obs&&obs.alt!=null)?obs.alt:(past.length?past[past.length-1].v:mNow);
   if(cur==null) return null;
-  if(obs&&obs.alt!=null&&src==="sensor") past.push({t:+new Date(obs.time),v:obs.alt});
   const bias=(mNow!=null)?cur-mNow:0, fc=[];
   if(h) for(let k=h.i0;k<=h.i0+24;k++){const v=model(k); if(v!=null) fc.push({t:hourStart+(k-h.i0)*H,v:v+bias});}
   // 3-hour change
@@ -796,7 +824,13 @@ function presPanel(l){
   const mid=(lo+hi)/2, span=Math.max(0.15,hi-lo+0.04); lo=mid-span/2; hi=mid+span/2;
   const W=320,Hh=110,L=4,Rr=44,T=8,B=22;
   const X=t=>L+(Math.min(t1,Math.max(t0,t))-t0)/(t1-t0)*(W-L-Rr), Y=v=>T+(hi-v)/(hi-lo)*(Hh-T-B);
-  const path=a=>a.filter(x=>x.t>=t0-36e5&&x.t<=t1+36e5).map((x,i)=>`${i?"L":"M"}${X(x.t).toFixed(1)} ${Y(x.v).toFixed(1)}`).join("");
+  const path=a=>{
+    const q=a.filter(x=>x.t>=t0-36e5&&x.t<=t1+36e5).map(x=>[X(x.t),Y(x.v)]); if(!q.length) return "";
+    let d=`M${q[0][0].toFixed(1)} ${q[0][1].toFixed(1)}`;
+    for(let i=0;i<q.length-1;i++){const p0=q[i-1]||q[i],p1=q[i],p2=q[i+1],p3=q[i+2]||p2;
+      d+=`C${(p1[0]+(p2[0]-p0[0])/6).toFixed(1)} ${(p1[1]+(p2[1]-p0[1])/6).toFixed(1)} ${(p2[0]-(p3[0]-p1[0])/6).toFixed(1)} ${(p2[1]-(p3[1]-p1[1])/6).toFixed(1)} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;}
+    return d;
+  };
   const pastD=path(P.past), fcD=path(P.fc);
   const area=pastD?`${pastD}L${X(P.past[P.past.length-1].t).toFixed(1)} ${Hh-B}L${X(P.past[0].t).toFixed(1)} ${Hh-B}Z`:"";
   const grid=[hi-(hi-lo)*0.15,mid,lo+(hi-lo)*0.15].map(v=>`<line x1="${L}" x2="${W-Rr}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="var(--line)" stroke-width="1"/><text x="${W-Rr+6}" y="${(Y(v)+3.5).toFixed(1)}" fill="var(--faint)" font-size="10" font-family="Barlow,sans-serif">${v.toFixed(2)}</text>`).join("");
@@ -985,7 +1019,7 @@ document.querySelector("h1").addEventListener("click",showOverview);
 document.querySelector("h1").style.cursor="pointer";
 /* ---------- loading, caching, refresh ---------- */
 const $status=document.getElementById("status"), $upd=document.getElementById("updated"), $btn=document.getElementById("refresh");
-const CACHE_KEY="bw-cache-v8";
+const CACHE_KEY="bw-cache-v9";
 let lastFetch=0, live=false, timer=null;
 
 function render(){ if(!DATA)return; if($dt.hidden) renderCards(); else { renderCards(); const y=window.scrollY; renderDetail(); $dt.className="detail"; window.scrollTo(0,y); } }
@@ -1026,6 +1060,7 @@ async function getObs(id){
     const list=(j.features||[]).map(parseObs).filter(Boolean).sort((a,b)=>new Date(b.time)-new Date(a.time));
     const o=list[0]; if(!o) return null;
     const t0=new Date(o.time), recent=x=>(t0-new Date(x.time))/6e4<=DIR_LOOKBACK_MIN;
+    if(o.hum==null){ const prev=list.slice(1).find(x=>x.hum!=null&&(new Date(o.time)-new Date(x.time))/6e4<=DIR_LOOKBACK_MIN); if(prev) o.hum=prev.hum; }
     if(o.spd==null){                                           // speed missing: borrow a recent reading
       const prev=list.slice(1).find(x=>x.spd!=null && recent(x));
       if(prev){ o.spd=prev.spd; o.dir=prev.dir; o.gust=o.gust??prev.gust; o.windAt=prev.time; }
