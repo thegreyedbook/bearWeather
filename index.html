@@ -304,6 +304,14 @@ function metarWind(raw){
   return {spd,dir,gust,vrb:m[1]==="VRB",range};
 }
 const HPA_IN=33.8639;
+function altFrom(p){
+  const a=metarAlt(p.rawMessage); if(a!=null) return a;
+  if(p.seaLevelPressure&&p.seaLevelPressure.value!=null) return p.seaLevelPressure.value/3386.39;
+  const bp=p.barometricPressure&&p.barometricPressure.value, el=p.elevation&&p.elevation.value;
+  if(bp!=null&&el!=null){ const P=bp/100-0.3, n=0.190284;               // NWS altimeter-setting formula
+    return P*Math.pow(1+(Math.pow(1013.25,n)*0.0065/288)*(el/Math.pow(P,n)),1/n)/HPA_IN; }
+  return null;
+}
 function metarAlt(raw){ if(!raw) return null; const m=raw.split(" RMK")[0].match(/\sA(\d{4})\b/); return m?+m[1]/100:null; }
 /* 72-hour history: one routine report per hour (minute ≥45), rain from the METAR "Pxxxx" group */
 const histUrl=id=>`https://api.weather.gov/stations/${id}/observations?start=${new Date(Date.now()-73*36e5).toISOString().slice(0,19)}Z&limit=400`;
@@ -316,9 +324,10 @@ function procHist(j){
   const rows=Object.values(byHour).map(p=>{
     const rmk=raw(p).split(" RMK")[1]||"", m=rmk.match(/\sP(\d{4})\b/);
     const pin=m?+m[1]/100:(q(p.precipitationLastHour,"in")??0);
-    return {t:+new Date(p.timestamp), p:pin, a:metarAlt(raw(p)) ?? (p.seaLevelPressure&&p.seaLevelPressure.value!=null?p.seaLevelPressure.value/3386.39:null)};
+    return {t:+new Date(p.timestamp), p:pin};
   });
-  return {gauge,rows};
+  const pres=ps.map(p=>({t:+new Date(p.timestamp),a:altFrom(p)})).filter(x=>x.a!=null&&x.a>27&&x.a<32);
+  return {gauge,rows,pres,n:ps.length};
 }
 function parseObs(j){
   const p=j&&(j.properties||j); if(!p||!p.timestamp) return null;
@@ -332,7 +341,7 @@ function parseObs(j){
     dir:   mw?mw.dir:q(p.windDirection),
     gust:  mw?mw.gust:q(p.windGust,"mph"),
     vrbMetar: mw?mw.vrb:false,
-    alt: metarAlt(p.rawMessage) ?? (p.seaLevelPressure&&p.seaLevelPressure.value!=null?p.seaLevelPressure.value/3386.39:null)};
+    alt: altFrom(p)};
 }
 function skyFromText(t){
   t=(t||"").toLowerCase(); if(!t) return null;
@@ -722,7 +731,8 @@ function buildPres(l,obs,hist){
   const model=k=>h&&h.pres[k]!=null?h.pres[k]/HPA_IN:null;
   const mNow=h?model(h.i0):null;
   let past=[], src="model", cur=null;
-  const rows=hist&&hist.rows?hist.rows.filter(r=>r.a!=null&&r.t>now-25*H):[];
+  const rows=hist&&hist.pres?hist.pres.filter(r=>r.t>now-25*H):[];
+  const why=!hist?"history":(!hist.pres||!hist.pres.length)?"nopress":rows.length<6?"few":null;
   if(rows.length>=6){ past=rows.map(r=>({t:r.t,v:r.a})); src="sensor"; }
   else if(h){ for(let k=h.i0-24;k<=h.i0;k++){const v=model(k); if(v!=null) past.push({t:hourStart+(k-h.i0)*H,v});} }
   cur=(obs&&obs.alt!=null)?obs.alt:(past.length?past[past.length-1].v:mNow);
@@ -734,7 +744,7 @@ function buildPres(l,obs,hist){
   const tgt=now-3*H; let ref=null,best=Infinity;
   for(const r of past){const d=Math.abs(r.t-tgt); if(d<best&&d<75*6e4){best=d;ref=r.v}}
   const d3=ref==null?null:cur-ref;
-  return {cur,src,past,fc,d3};
+  return {cur,src,past,fc,d3,why,curSensor:!!(obs&&obs.alt!=null)};
 }
 function presTrend(d3){
   if(d3==null) return {k:"steady",t:"Trend unknown",m:"Not enough recent readings to judge the trend."};
@@ -809,7 +819,8 @@ function presPanel(l){
       <span class="ptrend ${tr.k}">${arrow} ${tr.t}</span><span class="pd3">${d3}</span></div>
     ${svg}
     <div class="pmsg">${tr.m}</div>
-    <div class="wxsrc ${P.src==="sensor"?"ok":""}">${P.src==="sensor"?`Past 24h measured at ${l.station} · dashed line is forecast`:P.src==="sample"?"Sample data":"Model values · dashed line is forecast"}</div>
+    <div class="wxsrc ${P.src==="sensor"?"ok":""}">${P.src==="sensor"?`Past 24h measured at ${l.station} · dashed line is forecast`:P.src==="sample"?"Sample data":
+      `${P.curSensor?`Now: ${l.station} sensor · `:""}Past 24h: model (${P.why==="history"?`couldn't load ${l.station} history`:P.why==="nopress"?`${l.station} history has no pressure`:`too few ${l.station} readings`})`}</div>
   </div>`;
 }
 function srcChip(l){
@@ -974,7 +985,7 @@ document.querySelector("h1").addEventListener("click",showOverview);
 document.querySelector("h1").style.cursor="pointer";
 /* ---------- loading, caching, refresh ---------- */
 const $status=document.getElementById("status"), $upd=document.getElementById("updated"), $btn=document.getElementById("refresh");
-const CACHE_KEY="bw-cache-v7";
+const CACHE_KEY="bw-cache-v8";
 let lastFetch=0, live=false, timer=null;
 
 function render(){ if(!DATA)return; if($dt.hidden) renderCards(); else { renderCards(); const y=window.scrollY; renderDetail(); $dt.className="detail"; window.scrollTo(0,y); } }
