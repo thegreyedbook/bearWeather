@@ -226,15 +226,32 @@ function q(o,kind){
   if(kind==="in") return /:mm$/.test(u)?v/25.4:/:m$/.test(u)?v*39.3701:v;
   return v;
 }
+/* Wind straight from the raw airport report (METAR), e.g. "33015G25KT 300V360".
+   The processed NWS fields sometimes drop speed/direction while the METAR has them. */
+function metarWind(raw){
+  if(!raw) return null;
+  const body=raw.split(" RMK")[0];
+  const m=body.match(/\s(\d{3}|VRB)(\d{2,3})(?:G(\d{2,3}))?(KT|MPS)\b/); if(!m) return null;
+  const f=m[4]==="MPS"?2.236936:1.150779;
+  const spd=+m[2]*f, gust=m[3]?+m[3]*f:null;
+  let dir=m[1]==="VRB"?null:+m[1], range=null;
+  const v=body.match(/\s(\d{3})V(\d{3})\s/);
+  if(v){ range=[+v[1],+v[2]]; if(dir==null){ const a=range[0], d=((range[1]-a)+360)%360; dir=(a+d/2)%360; } }
+  if(spd===0) dir=null;
+  return {spd,dir,gust,vrb:m[1]==="VRB",range};
+}
 function parseObs(j){
-  const p=j&&j.properties; if(!p||!p.timestamp) return null;
+  const p=j&&(j.properties||j); if(!p||!p.timestamp) return null;
   const temp=q(p.temperature,"F"); if(temp==null) return null;
-  const spd=q(p.windSpeed,"mph");
+  const mw=metarWind(p.rawMessage);
+  const apiSpd=q(p.windSpeed,"mph");
   return {time:p.timestamp, text:p.textDescription||"",
     temp, feels:q(p.heatIndex,"F")??q(p.windChill,"F")??temp,
-    hum:q(p.relativeHumidity), spd:spd??0,
-    dir:q(p.windDirection),
-    gust:q(p.windGust,"mph"), precip:q(p.precipitationLastHour,"in")};
+    hum:q(p.relativeHumidity), precip:q(p.precipitationLastHour,"in"),
+    spd:   mw?mw.spd:apiSpd,                                   // null = not reported (NOT calm)
+    dir:   mw?mw.dir:q(p.windDirection),
+    gust:  mw?mw.gust:q(p.windGust,"mph"),
+    vrbMetar: mw?mw.vrb:false};
 }
 function skyFromText(t){
   t=(t||"").toLowerCase(); if(!t) return null;
@@ -335,9 +352,11 @@ function currentFrom(loc,cu,obs,asOfDate){
       current:{src:"sensor",obsClock:tc,age,stale:age>OBS_STALE_MIN,night,
         sky:skyFromText(obs.text)||modelSky,skyText:obs.text,
         temp:R(obs.temp),feels:R(obs.feels),hum:obs.hum==null?null:R(obs.hum),precip:obs.precip,
-        dir:obs.dirVar?R(cu.wind_direction_10m):obs.dir==null?null:R(obs.dir),dirVar:!!obs.dirVar,
-        dirAt:obs.dirAt?FMT_HM.format(new Date(obs.dirAt)):null,
-        spd:R(obs.spd),gust:obs.gust==null?null:R(obs.gust)}};
+        ...(obs.windMissing
+          ? {dir:R(cu.wind_direction_10m),spd:R(cu.wind_speed_10m),gust:R(cu.wind_gusts_10m),dirVar:false,windModel:true}
+          : {dir:obs.dirVar?R(cu.wind_direction_10m):obs.dir==null?null:R(obs.dir),dirVar:!!obs.dirVar,
+             spd:R(obs.spd),gust:obs.gust==null?null:R(obs.gust)}),
+        dirAt:obs.windAt?FMT_HM.format(new Date(obs.windAt)):null}};
   }
   return {asOf:`${day} · sensor unavailable, model estimate at ${clock(cu.time)}`,
     current:{src:"model",night,sky:modelSky,temp:R(cu.temperature_2m),feels:R(cu.apparent_temperature),hum:R(cu.relative_humidity_2m),
@@ -461,10 +480,10 @@ function renderCards(){
     return `<button class="card" type="button" data-id="${l.id}" aria-label="Open ${l.name}">
       <div class="name"><b>${l.name}</b>${srcChip(l)}</div>
       <div><div class="templine">${skyIcon(c.sky,52,c.night)}<div class="temp num">${c.temp}<sup>°F</sup></div></div><div class="feels">${c.skyText||SKY[c.sky]} · feels like ${c.feels}°</div></div>
-      <div class="dial">${dial(c.dir,c.spd,104,false,c.dirVar)}</div>
+      <div class="dial">${dial(c.dir,c.spd,104,false,c.dirVar||c.windModel)}</div>
       <div></div>
       <div class="stats">
-        <div class="stat"><div class="k">Wind</div><div class="v" style="color:${windColor(c.spd)}">${c.dir==null?"Calm":c.dirVar?`VRB ${c.spd}`:`${card8(c.dir)} ${c.spd}`} ${c.gust!=null?`<small>G ${c.gust}</small>`:""}</div></div>
+        <div class="stat"><div class="k">Wind</div><div class="v" style="color:${windColor(c.spd)}">${c.dir==null?"Calm":c.dirVar?`VRB ${c.spd}`:`${card8(c.dir)} ${c.spd}`}${c.windModel?"<small>*</small>":""} ${c.gust!=null?`<small>G ${c.gust}</small>`:""}</div></div>
         <div class="stat"><div class="k">Rain last hr</div><div class="v" style="color:${c.precip?"var(--rain)":"var(--fg)"}">${precipTxt(c.precip)}<small>in</small></div></div>
         <div class="stat"><div class="k">Humidity</div><div class="v">${pct(c.hum)}<small>%</small></div></div>
       </div>
@@ -518,11 +537,11 @@ function renderDetail(dirn){
           <div class="stat"><div class="k">Humidity</div><div class="v">${pct(c.hum)}<small>%</small></div></div>
         </div>
       </div>
-      ${dial(c.dir,c.spd,260,true,c.dirVar)}
+      ${dial(c.dir,c.spd,260,true,c.dirVar||c.windModel)}
       <div class="windtext">
         <span class="k">Wind from</span>
         <span class="from" style="color:${windColor(c.spd)}">${c.dirVar?"Variable":card8(c.dir)}</span>
-        ${c.dirVar?`<span class="dirnote">Sensor shows no steady direction. Model estimate: ${card8(c.dir)}</span>`:c.dirAt?`<span class="dirnote">Direction from ${c.dirAt} reading</span>`:""}
+        ${c.windModel?`<span class="dirnote">Sensor didn't report wind. Showing model estimate.</span>`:c.dirVar?`<span class="dirnote">Sensor shows no steady direction. Model estimate: ${card8(c.dir)}</span>`:c.dirAt?`<span class="dirnote">Wind from ${c.dirAt} reading</span>`:""}
         <span class="desc">${beaufort(c.spd)}</span>
         <span class="gust">${c.dir==null&&c.spd<1?"No measurable wind":`${c.spd} mph sustained · ${gustTxt(c.gust)}`}</span>
         <span class="k" style="margin-top:8px">Next 6 hours (forecast)</span>
@@ -598,7 +617,7 @@ document.querySelector("h1").addEventListener("click",showOverview);
 document.querySelector("h1").style.cursor="pointer";
 /* ---------- loading, caching, refresh ---------- */
 const $status=document.getElementById("status"), $upd=document.getElementById("updated"), $btn=document.getElementById("refresh");
-const CACHE_KEY="bw-cache-v3";
+const CACHE_KEY="bw-cache-v4";
 let lastFetch=0, live=false, timer=null;
 
 function render(){ if(!DATA)return; if($dt.hidden) renderCards(); else { renderCards(); const y=window.scrollY; renderDetail(); $dt.className="detail"; window.scrollTo(0,y); } }
@@ -628,11 +647,16 @@ async function getObs(id){
     const j=await r.json();
     const list=(j.features||[]).map(parseObs).filter(Boolean).sort((a,b)=>new Date(b.time)-new Date(a.time));
     const o=list[0]; if(!o) return null;
-    if(o.spd<1){ o.dir=null; return o; }                        // true calm
+    const t0=new Date(o.time), recent=x=>(t0-new Date(x.time))/6e4<=DIR_LOOKBACK_MIN;
+    if(o.spd==null){                                           // speed missing: borrow a recent reading
+      const prev=list.slice(1).find(x=>x.spd!=null && recent(x));
+      if(prev){ o.spd=prev.spd; o.dir=prev.dir; o.gust=o.gust??prev.gust; o.windAt=prev.time; }
+      else { o.windMissing=true; return o; }                   // fall back to model wind
+    }
+    if(o.spd<1){ o.dir=null; return o; }                       // true calm
     if(o.dir==null){
-      const t0=new Date(o.time);
-      const prev=list.slice(1).find(x=>x.dir!=null && x.spd>=1 && (t0-new Date(x.time))/6e4<=DIR_LOOKBACK_MIN);
-      if(prev){ o.dir=prev.dir; o.dirAt=prev.time; } else o.dirVar=true;  // variable / not reported
+      const prev=list.slice(1).find(x=>x.dir!=null && x.spd>=1 && recent(x));
+      if(prev){ o.dir=prev.dir; o.windAt=prev.time; } else o.dirVar=true;
     }
     return o;
   }catch(e){ console.warn(`Sensor ${id} unavailable:`,e); return null; }
