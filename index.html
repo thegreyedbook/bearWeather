@@ -59,14 +59,22 @@ button:focus-visible,.card:focus-visible{outline:2px solid var(--blaze);outline-
   display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto auto;gap:6px 12px;transition:border-color .15s,background .15s}
 .card:hover{border-color:#47513f}
 .card[aria-pressed="true"]{border-color:var(--blaze);background:var(--surface-2)}
-.card .name{grid-column:1/-1;display:flex;justify-content:space-between;align-items:baseline}
+.card .name{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.nright{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;min-width:0}
+.rainv{color:var(--rain);display:flex;align-items:center;gap:5px}
+.rainv .drop{flex:none}
+.card .stat .v{white-space:nowrap}
+.rainv span{white-space:nowrap}
+.rainv .nowt{font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+.rainv.dim{color:var(--faint)}
+.rainv.now{color:#8fd0ff}
 .card .name b{font-family:var(--display);font-weight:700;font-size:22px;text-transform:uppercase;letter-spacing:.04em}
 .card .name small{color:var(--faint);font-size:12px}
 .card .temp{font-size:68px;font-weight:700;line-height:.95}
 .card .temp sup{font-size:26px;color:var(--muted);vertical-align:top;position:relative;top:8px}
 .card .feels{color:var(--muted);font-size:13px}
 .card .dial{grid-row:2/4;grid-column:2;align-self:center}
-.stats{grid-column:1/-1;display:grid;grid-template-columns:1.3fr 1fr auto;align-items:end;gap:8px;margin-top:6px;border-top:1px solid var(--line);padding-top:10px}
+.stats{grid-column:1/-1;display:grid;grid-template-columns:auto auto auto;justify-content:space-between;align-items:end;gap:8px;margin-top:6px;border-top:1px solid var(--line);padding-top:10px}
 .stat .k{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint)}
 .stat .v{font-family:var(--display);font-weight:700;font-size:22px;font-variant-numeric:tabular-nums;line-height:1.1}
 .stat .v small{font-size:14px;color:var(--muted);font-weight:600}
@@ -96,7 +104,6 @@ button:focus-visible,.card:focus-visible{outline:2px solid var(--blaze);outline-
 .chilo i{font-style:normal;font-family:var(--body);font-size:11px;font-weight:600;color:var(--muted);margin-right:3px;letter-spacing:.06em}
 .chilo .lo{color:var(--muted)}
 .fchip{display:inline-flex;align-items:center;gap:6px;color:var(--front);background:var(--front-bg);border:1px solid var(--front-line);border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700;white-space:nowrap}
-.fcell{justify-self:end}
 .fchip.strong,.fbanner.strong .fhead{color:var(--front-hi)}
 .fbanner{background:var(--front-bg);border:1px solid var(--front-line);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
 .fhead{display:flex;align-items:center;gap:10px;color:var(--front);flex-wrap:wrap}
@@ -255,6 +262,11 @@ footer{color:var(--faint);font-size:12px;display:flex;justify-content:space-betw
   .lseg+.lseg{border-left:0;border-top:1px solid var(--line);padding-top:12px}
   .hilo{justify-content:center}
   .card .temp{font-size:56px}
+  .card .stat .v{font-size:20px}
+  .card .scode{display:none}
+  .card .name b{font-size:20px}
+  .nright{gap:6px;flex-wrap:nowrap}
+  .card .src{white-space:nowrap}
   .now .bigtemp{font-size:76px}
   .windtext .from{font-size:44px}
   .switch button{padding:6px 9px}
@@ -268,6 +280,11 @@ footer{color:var(--faint);font-size:12px;display:flex;justify-content:space-betw
   .back{font-size:13px;white-space:nowrap}
   .now .templine{justify-content:center}
   .tabs button{padding:8px 11px;font-size:14px}
+}
+@media (max-width:380px){
+  .card .name b{font-size:18px;white-space:nowrap}
+  .card .fchip{padding:3px 7px;font-size:11px}
+  .card .src{font-size:11px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
@@ -391,7 +408,7 @@ function parseObs(j){
   const apiSpd=q(p.windSpeed,"mph");
   return {time:p.timestamp, text:p.textDescription||"",
     temp, feels:q(p.heatIndex,"F")??q(p.windChill,"F")??temp,
-    hum:q(p.relativeHumidity)??rhCalc, precip:q(p.precipitationLastHour,"in"),
+    hum:q(p.relativeHumidity)??rhCalc, precip:q(p.precipitationLastHour,"in") ?? (m=>m?+m[1]/100:null)(((p.rawMessage||"").split(" RMK")[1]||"").match(/\sP(\d{4})\b/)),
     spd:   mw?mw.spd:apiSpd,                                   // null = not reported (NOT calm)
     dir:   mw?mw.dir:q(p.windDirection),
     gust:  mw?mw.gust:q(p.windGust,"mph"),
@@ -924,22 +941,31 @@ function presPanel(l){
 }
 function srcChip(l){
   const c=l.current;
-  if(c.src==="sensor") return `<small class="src ${c.stale?"old":"ok"}" title="Sensor reading from ${l.stationName}">● ${l.station} · ${c.obsClock}${c.stale?" (old)":""}</small>`;
+  if(c.src==="sensor") return `<small class="src ${c.stale?"old":"ok"}" title="Sensor reading from ${l.stationName}">● <span class="scode">${l.station} · </span>${c.obsClock}${c.stale?" (old)":""}</small>`;
   if(c.src==="model") return `<small class="src old" title="Sensor unavailable; showing model estimate">Model estimate</small>`;
   return `<small class="src">Sample</small>`;
+}
+/* Rain slot: measured rain in the last hour (sensor) wins; otherwise max chance over the next 6 hours */
+const dropIcon=`<svg class="drop" width="12" height="14" viewBox="0 0 12 14" aria-hidden="true"><path d="M6 0.8C6 0.8 1 6.6 1 9.3A5 5 0 0 0 11 9.3C11 6.6 6 0.8 6 0.8Z" fill="currentColor"/></svg>`;
+function rainStat(l){
+  const c=l.current;
+  if(c.src==="sensor"&&c.precip!=null&&c.precip>=0.01)
+    return `<div class="k">Rain</div><div class="v rainv now" title="Measured at ${l.station} in the last hour">${dropIcon}<span>${c.precip.toFixed(2)}<small>"</small> <small class="nowt">now</small></span></div>`;
+  const pp=Math.max(0,...l.hourly.slice(0,6).map(h=>h.pp||0));
+  return `<div class="k">Rain</div><div class="v rainv${pp<10?" dim":""}" title="Highest chance over the next 6 hours">${dropIcon}<span>${pp}<small>%</small></span></div>`;
 }
 function renderCards(){
   document.getElementById("cards").innerHTML=DATA.map(l=>{
     const c=l.current;
     return `<button class="card" type="button" data-id="${l.id}" aria-label="Open ${l.name}">
-      <div class="name"><b>${l.name}</b>${srcChip(l)}</div>
+      <div class="name"><b>${l.name}</b><span class="nright">${frontChip(l)}${srcChip(l)}</span></div>
       <div><div class="templine">${skyIcon(c.sky,52,c.night)}<div class="temp num">${c.temp}<sup>°F</sup></div></div><div class="feels">${c.skyText||SKY[c.sky]}</div><div class="chilo"><span><i>H</i>${l.daily[0].hi}°</span><span class="lo"><i>L</i>${l.daily[0].lo}°</span></div></div>
       <div class="dial">${dial(c.dir,c.spd,104,false,c.dirVar||c.windModel)}</div>
       <div></div>
       <div class="stats">
         <div class="stat"><div class="k">Wind</div><div class="v" style="color:${windColor(c.spd)}">${c.dir==null?"Calm":c.dirVar?`VRB ${c.spd}`:`${card8(c.dir)} ${c.spd}`}${c.windModel?"<small>*</small>":""} ${c.gust!=null?`<small>G ${c.gust}</small>`:""}</div></div>
         <div class="stat"><div class="k">Humidity</div><div class="v">${pct(c.hum)}<small>%</small></div></div>
-        <div class="stat fcell">${frontChip(l)}</div>
+        <div class="stat">${rainStat(l)}</div>
       </div>
     </button>`}).join("");
 }
