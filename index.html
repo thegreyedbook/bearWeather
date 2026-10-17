@@ -195,10 +195,15 @@ button:focus-visible,.card:focus-visible{outline:2px solid var(--blaze);outline-
 .radar-bar a{color:var(--muted);font-size:13px}
 .radar-frame{position:relative;background:var(--bg);border:1px solid var(--line);border-radius:10px;min-height:220px;display:grid;place-items:center;overflow:hidden}
 .rimg{position:relative;width:100%;max-width:900px}
+.rzoom{position:relative;width:100%;overflow:hidden}
+.rbar{position:relative;width:100%;overflow:hidden;border-top:1px solid var(--line)}
+.rbar img{position:absolute;left:0;bottom:0;width:100%}
+.rzbadge{position:absolute;right:8px;top:8px;font:600 11px var(--body);color:#fff;background:rgba(15,18,16,.7);padding:3px 8px;border-radius:999px}
 .radar-frame img{display:block;width:100%;height:auto}
 .rmark{position:absolute;transform:translate(-50%,-50%);pointer-events:none}
-.rmark i{display:block;width:12px;height:12px;border-radius:50%;background:#e01e1e;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.6)}
-.rmark span{position:absolute;left:14px;top:50%;transform:translateY(-50%);font:700 13px var(--body);color:#c00;white-space:nowrap;
+.rmark i{display:block;width:7px;height:7px;border-radius:50%;background:#e01e1e;box-shadow:0 0 0 1.5px #fff,0 0 0 2.5px rgba(0,0,0,.55)}
+.rmark::before{content:"";position:absolute;left:50%;top:50%;width:22px;height:22px;transform:translate(-50%,-50%);border-radius:50%;border:1.5px solid rgba(224,30,30,.85)}
+.rmark span{position:absolute;left:15px;top:50%;transform:translateY(-50%);font:700 13px var(--body);color:#c00;white-space:nowrap;
   text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 2px #fff}
 .radar-msg{color:var(--muted);font-size:14px;padding:24px;text-align:center}
 .radar-note{color:var(--faint);font-size:12px}
@@ -633,8 +638,34 @@ function lightStatus(l){
    KDFX calibrated from the town dots for Sonora, Del Rio, Uvalde and Laredo
    (linear lat/lon fit, max error 0.6 px ≈ 0.3 mi). Position = % of image width/height. */
 const RADAR_MARKS={
-  KDFX:[{label:"Rocksprings",x:(318.0/600*100).toFixed(2),y:(172.7/550*100).toFixed(2)}],
+  KDFX:[{label:"Rocksprings",x:318.0/600*100,y:172.7/550*100}],
 };
+const RADAR_ZOOM={KDFX:{z:2.2,cx:318.0/600,cy:172.7/550}};   // centered view on the property
+const RADAR_IMG_W=600,RADAR_IMG_H=550,RADAR_BAR_H=26;           // bottom bar = color scale + timestamp
+let radarZoomOn=true;
+function radarImg(l,src){
+  const Z=RADAR_ZOOM[l.radar], marks=RADAR_MARKS[l.radar]||[];
+  const onl=`onload="const w=this.closest('.rimg');w.hidden=false;w.previousElementSibling.hidden=true"`;
+  const onerr=`onerror="this.closest('.rimg').previousElementSibling.textContent='Radar image unavailable right now. Try Full NWS radar.'"`;
+  const alt=`${l.radarName} (${l.radar}) radar ${radarMode}`;
+  const mk=(x,y)=>`<div class="rmark" style="left:${x.toFixed(2)}%;top:${y.toFixed(2)}%"><i></i>`;
+  if(!Z||!radarZoomOn){
+    return `<div class="rimg" hidden><img alt="${alt}" src="${src}" ${onl} ${onerr}>
+      ${marks.map(m=>`${mk(m.x,m.y)}<span>${m.label}</span></div>`).join("")}</div>`;
+  }
+  // zoomed: scale image by Z and shift so the property sits in the center (clamped to the image edges)
+  const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+  const r=RADAR_IMG_H/(RADAR_IMG_H-RADAR_BAR_H);                 // image height ÷ visible window height
+  const left=clamp(50-Z.cx*Z.z*100,100-Z.z*100,0), top=clamp(50-Z.cy*Z.z*100*r,100-Z.z*100*r,0);
+  return `<div class="rimg" hidden>
+    <div class="rzoom" style="aspect-ratio:${RADAR_IMG_W}/${RADAR_IMG_H-RADAR_BAR_H}">
+      <img alt="${alt}" src="${src}" style="position:absolute;width:${Z.z*100}%;max-width:none;left:${left.toFixed(2)}%;top:${top.toFixed(2)}%" ${onl} ${onerr}>
+      ${marks.map(m=>`${mk(left+m.x*Z.z,top+m.y*Z.z*r)}<span>${m.label}</span></div>`).join("")}
+      <div class="rzbadge">${Z.z}× · centered on property</div>
+    </div>
+    <div class="rbar" style="aspect-ratio:${RADAR_IMG_W}/${RADAR_BAR_H}"><img alt="" src="${src}" aria-hidden="true"></div>
+  </div>`;
+}
 function radarSection(l){
   const page=`https://radar.weather.gov/station/${l.radar}/standard`;
   let body="";
@@ -647,16 +678,15 @@ function radarSection(l){
           <button type="button" data-rmode="loop" aria-selected="${radarMode==="loop"}">Loop</button>
           <button type="button" data-rmode="latest" aria-selected="${radarMode==="latest"}">Latest</button>
         </div>
+        ${RADAR_ZOOM[l.radar]?`<div class="tabs" role="tablist" aria-label="Radar zoom">
+          <button type="button" data-rzoom="1" aria-selected="${radarZoomOn}">Property</button>
+          <button type="button" data-rzoom="0" aria-selected="${!radarZoomOn}">Full</button>
+        </div>`:""}
         <a href="${page}" target="_blank" rel="noopener">Full NWS radar ↗</a>
       </div>
       <div class="radar-frame">
         <div class="radar-msg" data-radar-msg>Loading ${l.radar} radar…</div>
-        <div class="rimg" hidden>
-          <img alt="${l.radarName} (${l.radar}) radar ${radarMode}" src="${src}"
-            onload="this.parentElement.hidden=false;this.parentElement.previousElementSibling.hidden=true"
-            onerror="this.parentElement.previousElementSibling.textContent='Radar image unavailable right now. Try Full NWS radar.'">
-          ${(RADAR_MARKS[l.radar]||[]).map(m=>`<div class="rmark" style="left:${m.x}%;top:${m.y}%"><i></i><span>${m.label}</span></div>`).join("")}
-        </div>
+        ${radarImg(l,src)}
       </div>
       <div class="radar-note">NWS ${l.radar} · ${l.radarName} · base reflectivity with active warnings. Loop covers about the last hour.</div>
     </div>`;
@@ -1033,6 +1063,8 @@ $dt.addEventListener("click",e=>{
   const l=e.target.closest("[data-loc]");
   if(l){ const i=DATA.findIndex(x=>x.id===selected), j=DATA.findIndex(x=>x.id===l.dataset.loc); if(i!==j) openLoc(l.dataset.loc,j>i?1:-1); return; }
   if(e.target.closest("[data-act=radar]")){ radarOpen=!radarOpen; const y=window.scrollY; renderDetail(); $dt.className="detail"; window.scrollTo(0,y); return; }
+  const rz=e.target.closest("[data-rzoom]");
+  if(rz){ radarZoomOn=rz.dataset.rzoom==="1"; const y=window.scrollY; renderDetail(); $dt.className="detail"; window.scrollTo(0,y); return; }
   const rm=e.target.closest("[data-rmode]");
   if(rm){ radarMode=rm.dataset.rmode; const y=window.scrollY; renderDetail(); $dt.className="detail"; window.scrollTo(0,y); return; }
   if(e.target.closest("[data-act=back]")) showOverview();
